@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PluginManifest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>Request Board</Name>
+  <Guid>7b1f0c52-3d4e-4a8b-9f16-2c5d8e0a4b73</Guid>
+  <Version>v1.0.3</Version>
+</PluginManifest>
