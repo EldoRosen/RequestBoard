@@ -69,6 +69,7 @@ namespace RequestBoard.Board
         public double PostingFee { get; set; }
         public long MinPrice { get; set; } = 1000;
         public long MaxPrice { get; set; } = 100000000;
+        public double MinHours { get; set; } = 1;
         public double MaxHours { get; set; } = 72;
         public int MaxOpenPerPlayer { get; set; } = 3;
         public double CooldownMinutes { get; set; }

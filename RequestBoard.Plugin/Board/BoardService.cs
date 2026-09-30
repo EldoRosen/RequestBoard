@@ -110,8 +110,8 @@ namespace RequestBoard.Board
                 text = text?.Trim();
                 if (string.IsNullOrEmpty(text)) return Fail("Request text can't be empty.");
                 if (text.Length > 300) return Fail("Request text is too long (max 300 characters).");
-                if (double.IsNaN(hours) || hours <= 0 || hours > rules.MaxHours)
-                    return Fail($"Time must be a number of hours between 0 and {rules.MaxHours}.");
+                if (double.IsNaN(hours) || hours < rules.MinHours || hours > rules.MaxHours)
+                    return Fail($"Time must be a number of hours between {rules.MinHours} and {rules.MaxHours}.");
                 var unlimited = rules.MaxPrice <= 0;
                 if (price < rules.MinPrice || (!unlimited && price > rules.MaxPrice))
                     return Fail(unlimited
@@ -370,10 +370,10 @@ namespace RequestBoard.Board
             "GPS:Request {0}:{1:F2}:{2:F2}:{3:F2}:#FF75C9F1:", r.Id, r.X, r.Y, r.Z);
 
         public static string Describe(BoardSettings r) => string.Format(CultureInfo.InvariantCulture,
-            "price {0:N0}-{1} {2}, deposit {3}%, posting fee {9}, max {4} h, {5} active per player, cooldown {6} min, burn deposit on fail: {7}, GPS: {8}",
+            "price {0:N0}-{1} {2}, deposit {3}%, posting fee {9}, time {10}-{4} h, {5} active per player, cooldown {6} min, burn deposit on fail: {7}, GPS: {8}",
             r.MinPrice, r.MaxPrice <= 0 ? "unlimited" : r.MaxPrice.ToString("N0"), r.Currency, r.DepositPercent, r.MaxHours,
             r.MaxOpenPerPlayer, r.CooldownMinutes, r.BurnDepositOnFail, r.IncludeGps,
-            r.PostingFeeMode == PostingFeeMode.Percent ? $"{r.PostingFee}%" : $"{r.PostingFee:N0} {r.Currency}");
+            r.PostingFeeMode == PostingFeeMode.Percent ? $"{r.PostingFee}%" : $"{r.PostingFee:N0} {r.Currency}", r.MinHours);
 
         private static string WebhookState(BoardSettings r) => string.IsNullOrWhiteSpace(r.DiscordWebhookUrl) ? "not configured" : "configured";
 
@@ -389,7 +389,9 @@ namespace RequestBoard.Board
             if (s.MinPrice < 1) return "Minimum price must be at least 1.";
             if (s.MaxPrice < 0) return "Maximum price can't be negative (use 0 for unlimited).";
             if (s.MaxPrice > 0 && s.MaxPrice < s.MinPrice) return "Maximum price must be 0 (unlimited) or at least the minimum price.";
+            if (!(s.MinHours > 0) || s.MinHours > 8760) return "Min hours must be between 0 and 8760.";
             if (!(s.MaxHours > 0) || s.MaxHours > 8760) return "Max hours must be between 0 and 8760.";
+            if (s.MaxHours < s.MinHours) return "Max hours must be at least the min hours.";
             if (s.MaxOpenPerPlayer < 1) return "Active requests per player must be at least 1.";
             if (!(s.CooldownMinutes >= 0) || s.CooldownMinutes > 525600) return "Cooldown must be between 0 and 525600 minutes.";
             if (s.DiscordWebhookUrl.Length > 0 &&
