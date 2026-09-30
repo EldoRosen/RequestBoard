@@ -61,9 +61,10 @@ public sealed class SettingsStore
     }
 
     public static string Describe(BoardSettings r) => string.Format(System.Globalization.CultureInfo.InvariantCulture,
-        "price {0:N0}-{1} {2}, deposit {3}%, max {4} h, {5} active per player, open expiry {6} h, cooldown {7} min, burn deposit on fail: {8}, GPS: {9}",
+        "price {0:N0}-{1} {2}, deposit {3}%, posting fee {10}, max {4} h, {5} active per player, open expiry {6} h, cooldown {7} min, burn deposit on fail: {8}, GPS: {9}",
         r.MinPrice, r.MaxPrice <= 0 ? "unlimited" : r.MaxPrice.ToString("N0"), r.Currency, r.DepositPercent, r.MaxHours,
-        r.MaxOpenPerPlayer, r.OpenExpiryHours, r.CooldownMinutes, r.BurnDepositOnFail, r.IncludeGps);
+        r.MaxOpenPerPlayer, r.OpenExpiryHours, r.CooldownMinutes, r.BurnDepositOnFail, r.IncludeGps,
+        r.PostingFeeMode == PostingFeeMode.Percent ? $"{r.PostingFee}%" : $"{r.PostingFee:N0} {r.Currency}");
 
     public static string WebhookState(BoardSettings r) => string.IsNullOrWhiteSpace(r.DiscordWebhookUrl) ? "not configured" : "configured";
 
@@ -71,6 +72,11 @@ public sealed class SettingsStore
     {
         if (string.IsNullOrEmpty(s.Currency) || s.Currency.Length > 16) return "Currency must be 1 to 16 characters.";
         if (s.DepositPercent < 0 || s.DepositPercent > 1000) return "Deposit percent must be between 0 and 1000.";
+        if (!Enum.IsDefined(s.PostingFeeMode)) return "Unknown posting fee type.";
+        if (s.PostingFeeMode == PostingFeeMode.Percent && (!(s.PostingFee >= 0) || s.PostingFee > 1000))
+            return "Posting fee percent must be between 0 and 1000.";
+        if (s.PostingFeeMode == PostingFeeMode.Flat && (!(s.PostingFee >= 0) || s.PostingFee > 1e15 || s.PostingFee != Math.Floor(s.PostingFee)))
+            return "Flat posting fee must be a whole number between 0 and 1,000,000,000,000,000.";
         if (s.MinPrice < 1) return "Minimum price must be at least 1.";
         if (s.MaxPrice < 0) return "Maximum price can't be negative (use 0 for unlimited).";
         if (s.MaxPrice > 0 && s.MaxPrice < s.MinPrice) return "Maximum price must be 0 (unlimited) or at least the minimum price.";

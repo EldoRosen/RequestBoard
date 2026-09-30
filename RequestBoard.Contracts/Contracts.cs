@@ -5,6 +5,8 @@ namespace RequestBoard.Contracts
 {
     public enum RequestStatus { Open, Accepted, Delivered, Failed, Expired, Cancelled }
 
+    public enum PostingFeeMode { Flat, Percent }
+
     public class RequestDto
     {
         public int Id { get; set; }
@@ -55,6 +57,7 @@ namespace RequestBoard.Contracts
         public string Text { get; set; }
         public double Hours { get; set; }
         public long Price { get; set; }
+        public long Fee { get; set; }
         public bool HasLocation { get; set; }
         public double X { get; set; }
         public double Y { get; set; }
@@ -106,6 +109,8 @@ namespace RequestBoard.Contracts
     {
         public string Currency { get; set; } = "SC";
         public int DepositPercent { get; set; } = 100;
+        public PostingFeeMode PostingFeeMode { get; set; }
+        public double PostingFee { get; set; }
         public long MinPrice { get; set; } = 1000;
         public long MaxPrice { get; set; } = 100000000;
         public double MaxHours { get; set; } = 72;
@@ -115,6 +120,13 @@ namespace RequestBoard.Contracts
         public bool BurnDepositOnFail { get; set; }
         public bool IncludeGps { get; set; } = true;
         public string DiscordWebhookUrl { get; set; } = "";
+
+        public long PostingFeeFor(long price)
+        {
+            var fee = PostingFeeMode == PostingFeeMode.Percent ? Math.Ceiling(price * PostingFee / 100.0) : Math.Ceiling(PostingFee);
+            if (!(fee > 0)) return 0;
+            return fee >= long.MaxValue ? long.MaxValue : (long)fee;
+        }
     }
 
     public class SaveSettingsCommand

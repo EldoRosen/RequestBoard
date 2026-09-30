@@ -39,7 +39,7 @@
                     </Grid.Resources>
 
                     <TextBlock Grid.Row="0" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!request &lt;price&gt; &lt;hours&gt; &lt;description&gt;"/>
-                    <TextBlock Grid.Row="0" Grid.Column="1" Text="Post a request. Price is taken and held until delivered, failed or cancelled. No quotes needed - everything after the hours is the description."/>
+                    <TextBlock Grid.Row="0" Grid.Column="1" Text="Post a request. Price is taken and held until delivered, failed or cancelled. A posting fee may also be charged, which is never refunded. No quotes needed - everything after the hours is the description."/>
 
                     <TextBlock Grid.Row="1" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!requests"/>
                     <TextBlock Grid.Row="1" Grid.Column="1" Text="List all open requests with their number, sector, price, time limit and deposit (from every server connected to the service)."/>

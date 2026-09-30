@@ -71,34 +71,56 @@ namespace RequestBoard
                 reply("Price must be a positive whole number.");
                 return;
             }
-            if (Bank.Balance(playerId) < price) { reply($"You need {price:N0} {Currency} to post this request."); return; }
-            if (!Bank.Add(playerId, -price)) { reply("Could not withdraw the credits."); return; }
-
-            var cmd = new CreateCommand
-            {
-                OperationId = NewOp(),
-                ServerName = _cfg.ServerName,
-                PlayerId = playerId,
-                PlayerName = playerName,
-                Text = text,
-                Hours = hours,
-                Price = price,
-                HasLocation = position != null,
-                X = position?[0] ?? 0,
-                Y = position?[1] ?? 0,
-                Z = position?[2] ?? 0
-            };
-            Call(() => _backend.CreateAsync(cmd),
-                result =>
+            Call(() => _backend.GetSettingsAsync(),
+                settings =>
                 {
-                    if (!result.Ok) Refund(playerId, price, "rejected request");
-                    reply(result.Message);
+                    var rules = settings.Settings;
+                    if (rules == null) { reply(Unreachable); return; }
+                    if (!string.IsNullOrEmpty(rules.Currency)) Currency = rules.Currency;
+                    var fee = rules.PostingFeeFor(price);
+                    if (fee >= long.MaxValue - price) { reply("Price is too high."); return; }
+                    var total = price + fee;
+                    if (Bank.Balance(playerId) < total)
+                    {
+                        reply(fee > 0
+                            ? $"You need {total:N0} {Currency} to post this request ({price:N0} price + {fee:N0} posting fee)."
+                            : $"You need {price:N0} {Currency} to post this request.");
+                        return;
+                    }
+                    if (!Bank.Add(playerId, -total)) { reply("Could not withdraw the credits."); return; }
+
+                    var cmd = new CreateCommand
+                    {
+                        OperationId = NewOp(),
+                        ServerName = _cfg.ServerName,
+                        PlayerId = playerId,
+                        PlayerName = playerName,
+                        Text = text,
+                        Hours = hours,
+                        Price = price,
+                        Fee = fee,
+                        HasLocation = position != null,
+                        X = position?[0] ?? 0,
+                        Y = position?[1] ?? 0,
+                        Z = position?[2] ?? 0
+                    };
+                    Call(() => _backend.CreateAsync(cmd),
+                        result =>
+                        {
+                            if (!result.Ok) Refund(playerId, total, "rejected request");
+                            reply(result.Message);
+                        },
+                        e =>
+                        {
+                            Log.Error(e, $"RequestBoard: posting a request for {playerName} failed, refunding {total:N0}");
+                            Refund(playerId, total, "unreachable service");
+                            reply(Unreachable + " Your credits were refunded.");
+                        });
                 },
                 e =>
                 {
-                    Log.Error(e, $"RequestBoard: posting a request for {playerName} failed, refunding {price:N0}");
-                    Refund(playerId, price, "unreachable service");
-                    reply(Unreachable + " Your credits were refunded.");
+                    Log.Error(e, $"RequestBoard: loading the rules to post a request for {playerName} failed");
+                    reply(Unreachable);
                 });
         }
 

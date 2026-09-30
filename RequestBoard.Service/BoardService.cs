@@ -85,6 +85,9 @@ public sealed class BoardService
 
         var deposit = Math.Ceiling(c.Price * (double)rules.DepositPercent / 100.0);
         if (deposit < 0 || deposit >= long.MaxValue - c.Price) return Fail("Price is too high.");
+        var fee = rules.PostingFeeFor(c.Price);
+        if (fee >= long.MaxValue - c.Price) return Fail("Price is too high.");
+        if (c.Fee != fee) return Fail($"The posting fee is now {fee:N0} {rules.Currency}, please try again.");
         var includeGps = c.HasLocation && rules.IncludeGps;
         var r = new RequestDto
         {
@@ -105,8 +108,9 @@ public sealed class BoardService
         };
         _db.Insert(tx, r);
         Event(r, $"📦 New request #{r.Id}", Blue, null, true,
-            $"#{r.Id} posted by {r.RequesterName} on {c.ServerName}: {r.Price:N0} {rules.Currency}, {r.Hours} h, deposit {r.Deposit:N0} - \"{r.Text}\"");
-        return Ok($"Request #{r.Id} posted. {r.Price:N0} {rules.Currency} is held in escrow until it is delivered, failed or cancelled.", r);
+            $"#{r.Id} posted by {r.RequesterName} on {c.ServerName}: {r.Price:N0} {rules.Currency}, {r.Hours} h, deposit {r.Deposit:N0}, fee {fee:N0} - \"{r.Text}\"");
+        var feeText = fee > 0 ? $" A posting fee of {fee:N0} {rules.Currency} was charged." : "";
+        return Ok($"Request #{r.Id} posted. {r.Price:N0} {rules.Currency} is held in escrow until it is delivered, failed or cancelled.{feeText}", r);
     });
 
     public ApiResult Accept(int id, AcceptCommand c) => Run(c.OperationId, c.ServerName, c.PlayerName, $"accept #{id}", tx =>

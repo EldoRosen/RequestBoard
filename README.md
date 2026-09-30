@@ -7,7 +7,7 @@ Players post paid requests, other players accept them, credits are held in escro
 ### Commands
 | Command | Who | Effect |
 |---|---|---|
-| `!request <price> <hours> <description>` | anyone | Post a request, price is held in escrow |
+| `!request <price> <hours> <description>` | anyone | Post a request, price is held in escrow; the posting fee (if set) is kept |
 | `!requests` | anyone | List open requests (with GPS location if enabled) |
 | `!accept <id>` | anyone but the requester | Accept; deposit is held |
 | `!deliver <id>` | requester | Accepter is paid price + deposit back |
