@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Request Board is a Torch (Space Engineers dedicated server) plugin where players post paid requests with credits held in escrow. State lives in a SQLite file the plugin opens directly; several Torch servers on the same machine can share one board by pointing at the same file. See README.md for player commands and setup.
+Request Board is a Torch (Space Engineers dedicated server) plugin where players post paid requests with credits held in escrow. State lives in a SQLite file the plugin opens directly; several Torch servers on the same machine can share one board by pointing at the same file. Those servers have player identities and credit balances kept in sync by a separate system, so any server can pay any player by identity ID; that's what makes cross-server payouts (deliver, expiry) work. See README.md for player commands and setup.
 
 ## Build
 
