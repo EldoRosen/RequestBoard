@@ -68,7 +68,7 @@
                     <TextBlock Text="Mod channel ID (only change if another mod already uses this number)" Margin="0,6,0,0"/>
                     <TextBox Text="{Binding NexusChannelId}" Width="160" HorizontalAlignment="Left"/>
                     <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" Opacity="0.75" FontStyle="Italic"
-                               Text="When on, a request stays owned by the sector it was posted in. Accepting, delivering, failing or cancelling it from another sector is relayed there automatically."/>
+                               Text="When on, every sector shares the same board and commands run on the sector where they are typed. Request IDs look like 2/15 (server ID / number). Changing this setting or the channel ID requires a restart; every server must run the same plugin version."/>
                 </StackPanel>
             </GroupBox>
 
@@ -79,7 +79,7 @@
                     <DataGrid x:Name="RequestsGrid" AutoGenerateColumns="False" IsReadOnly="True"
                               Height="200" SelectionMode="Single" CanUserAddRows="False">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="#" Binding="{Binding Id}" Width="40"/>
+                            <DataGridTextColumn Header="#" Binding="{Binding Label}" Width="60"/>
                             <DataGridTextColumn Header="Requester" Binding="{Binding RequesterName}"/>
                             <DataGridTextColumn Header="Accepted by" Binding="{Binding AccepterName}"/>
                             <DataGridTextColumn Header="Price" Binding="{Binding Price}"/>

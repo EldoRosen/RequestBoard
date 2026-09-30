@@ -40,11 +40,11 @@ namespace RequestBoard.UI
         {
             var selected = RequestsGrid.SelectedItem as Request;
             if (selected == null) return;
-            var id = selected.Id;
+            var key = selected.Key;
             // Balance changes must run on the game thread.
             _plugin.Torch.Invoke(() =>
             {
-                var result = _plugin.Service.AdminCancel(id);
+                var result = _plugin.Service.AdminCancel(key);
                 Dispatcher.Invoke(() => { TestStatus.Text = result.Message; RefreshGrid(); });
             });
         }

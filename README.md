@@ -1,4 +1,4 @@
-# Request Board v1.0.3 (Torch plugin for Space Engineers)
+# Request Board v1.1.0 (Torch plugin for Space Engineers)
 
 Players post paid requests, other players accept them, credits are held in escrow.
 
@@ -13,7 +13,17 @@ Players post paid requests, other players accept them, credits are held in escro
 | `!cancelrequest <id>` | requester | Cancel an un-accepted request (refund) |
 | `!admincancel <id>` | admin | Cancel any active request, refund everyone |
 
-Enable **Nexus V3** in settings to make requests visible and actionable across every sector in your Nexus network (see the guide for how this works and its limits).
+Enable **Nexus V3** in settings to share the board across every server in your Nexus network.
+
+### How Nexus sync works
+- Request IDs look like `<serverId>/<number>` (e.g. `2/15`): the Nexus ID of the server the request was posted on plus a counter, so they never collide. Typing just the number (`15`) means a request posted on the server you're on. Without Nexus, IDs are plain numbers.
+- Every server keeps a full copy of the board. Commands run on the server where they were typed: `!accept` takes the deposit there, `!deliver` pays out there, and so on. The new state is then broadcast to the other servers.
+- Each change bumps the request's version, and servers always keep the newest version.
+- On startup a server asks the online servers for their boards and merges them before it accepts any command. After 20 seconds it stops waiting for servers that don't answer. Servers also re-broadcast the active board every 5 minutes to recover from lost messages.
+- Timeouts (open expiry and delivery deadline) are absolute UTC times shared with every server; `!requests` shows the time left. Only the server where a request was posted processes its timeout (1 minute after it passes). If that server is offline, the timeout is processed when it comes back. Commands on a request are refused once its time is up.
+- If two players accept the same request on different servers at the same moment, every server keeps the earlier accept. The losing player's deposit is refunded by the server that took it, and the conflict is logged and posted to Discord. A cancel that races an accept wins, and the accepter is refunded.
+- Every server must run the same plugin version; messages from other versions are ignored and logged.
+- Credits must be synced across servers by Nexus, and player identity IDs must be the same on every server.
 
 Requests also expire automatically (un-accepted -> refund, missed deadline -> fail).
 Every new/accepted/delivered/failed/expired/cancelled event is posted to Discord.

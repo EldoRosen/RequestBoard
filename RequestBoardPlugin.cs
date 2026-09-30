@@ -39,7 +39,7 @@ namespace RequestBoard
 
         private void OnSessionStateChanged(ITorchSession session, TorchSessionState state)
         {
-            if (state == TorchSessionState.Loaded) { Nexus.Start(); Service.Start(); }
+            if (state == TorchSessionState.Loaded) { Service.Start(); Nexus.Start(); }
             else if (state == TorchSessionState.Unloading) { Service.Stop(); Nexus.Stop(); }
         }
 

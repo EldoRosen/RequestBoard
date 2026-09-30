@@ -3,7 +3,7 @@
     <TargetFramework>net48</TargetFramework>
     <UseWPF>true</UseWPF>
     <LangVersion>latest</LangVersion>
-    <Version>1.0.3</Version>
+    <Version>1.1.0</Version>
     <RootNamespace>RequestBoard</RootNamespace>
     <AssemblyName>RequestBoard</AssemblyName>
     <!-- Point this at your Torch install, or pass /p:TorchDir=... -->

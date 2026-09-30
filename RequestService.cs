@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using Newtonsoft.Json;
 using NLog;
+using Sandbox.Game;
 using Torch.API;
 
 namespace RequestBoard
@@ -18,22 +19,12 @@ namespace RequestBoard
         public static Result Success(string m) => new Result { Ok = true, Message = m };
     }
 
-    /// <summary>
-    /// All request rules and money movement live here.
-    /// Escrow model:
-    ///   request  -> requester's price is taken and held
-    ///   accept   -> accepter's deposit is taken and held
-    ///   deliver  -> accepter gets price + deposit back
-    ///   fail     -> requester gets price back (+ deposit unless configured to burn it)
-    ///
-    /// When Nexus V3 is enabled, a request is always owned by the server it was
-    /// created on ("home" server) - only that server ever moves credits for it.
-    /// Other servers only keep a read-only mirror of its status (for "!requests")
-    /// and relay player actions on it back to the home server.
-    /// </summary>
     public class RequestService
     {
-        private const int Blue = 0x3498DB, Yellow = 0xF1C40F, Green = 0x2ECC71, Red = 0xE74C3C, Grey = 0x95A5A6;
+        private const int Blue = 0x3498DB, Yellow = 0xF1C40F, Green = 0x2ECC71, Red = 0xE74C3C, Grey = 0x95A5A6, Orange = 0xE67E22;
+        private static readonly TimeSpan TimerGrace = TimeSpan.FromMinutes(1);
+        private static readonly TimeSpan SyncTimeout = TimeSpan.FromSeconds(20);
+        private const int ResyncEveryTicks = 5;
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
         private readonly ITorchBase _torch;
@@ -45,45 +36,66 @@ namespace RequestBoard
         private List<Request> _requests = new List<Request>();
         private int _nextId = 1;
         private Timer _timer;
-
-        // Read-only mirror of other servers' requests, for "!requests" only. Keyed by (origin server, origin local id).
-        private readonly Dictionary<(byte, int), NexusRequestDto> _remote = new Dictionary<(byte, int), NexusRequestDto>();
+        private Timer _syncTimer;
+        private bool _started;
+        private bool _connected;
+        private bool _synced;
+        private int _tickCount;
+        private readonly HashSet<byte> _syncPending = new HashSet<byte>();
 
         public RequestService(ITorchBase torch, RequestBoardConfig cfg, DiscordWebhook hook, NexusBridge nexus, string file)
         {
             _torch = torch; _cfg = cfg; _hook = hook; _nexus = nexus; _file = file;
-            if (_nexus != null)
-            {
-                _nexus.RequestEventReceived += OnRemoteRequestEvent;
-                _nexus.RelayActionReceived += OnRelayAction;
-            }
+            _nexus.Connected += () => OnGameThread(OnNexusConnected);
+            _nexus.StateReceived += list => OnGameThread(() => OnState(list));
+            _nexus.SyncRequested += from => OnGameThread(() => OnSyncRequested(from));
+            _nexus.SyncResponseReceived += (from, list, last) => OnGameThread(() => OnSyncResponse(from, list, last));
         }
 
-        /// <summary>Call only once the game session is loaded (the game thread must exist).</summary>
+        public byte MyServerId => _nexus.CurrentServerId;
+
         public void Start()
         {
-            if (_timer != null) return;
-            Load();
-            // Timer thread -> hop onto the game thread before touching balances.
-            _timer = new Timer(_ =>
-            {
-                try { _torch.Invoke(Tick); }
-                catch (Exception e) { Log.Warn(e, "RequestBoard could not schedule tick"); }
-            }, null, TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(1));
+            if (_started) return;
+            _started = true;
+            lock (_lock) Load();
+            _timer = new Timer(_ => OnGameThread(Tick), null, TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(1));
         }
 
         public void Stop()
         {
             _timer?.Dispose();
             _timer = null;
-            lock (_lock) Save();
+            _syncTimer?.Dispose();
+            _syncTimer = null;
+            lock (_lock)
+            {
+                if (_started) Save();
+                _started = false;
+                _connected = false;
+                _synced = false;
+                _syncPending.Clear();
+            }
         }
 
-        // ---------------------------------------------------------------- player actions
+        private void OnGameThread(Action action)
+        {
+            try { _torch.Invoke(action); }
+            catch (Exception e) { Log.Warn(e, "RequestBoard could not schedule work on the game thread"); }
+        }
+
+        private Result NotReady()
+        {
+            if (!_cfg.Enabled) return Result.Fail("Request Board is currently disabled.");
+            if (!_started) return Result.Fail("Request Board is still starting, try again in a few seconds.");
+            if (!_nexus.Active) return null;
+            if (!_nexus.Enabled) return Result.Fail("Request Board is waiting for the Nexus connection, try again shortly.");
+            if (!_synced) return Result.Fail("Request Board is syncing with the other sectors, try again in a few seconds.");
+            return null;
+        }
 
         public Result Create(long playerId, string playerName, string text, string hoursStr, string priceStr, double[] position = null)
         {
-            if (!_cfg.Enabled) return Result.Fail("Request Board is currently disabled.");
             if (string.IsNullOrWhiteSpace(text)) return Result.Fail("Request text can't be empty.");
             text = text.Trim();
             if (text.Length > 300) return Result.Fail("Request text is too long (max 300 characters).");
@@ -91,7 +103,7 @@ namespace RequestBoard
             if (!double.TryParse(hoursStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var hours) || hours <= 0 || hours > _cfg.MaxHours)
                 return Result.Fail($"Time must be a number of hours between 0 and {_cfg.MaxHours}.");
 
-            var unlimited = _cfg.MaxPrice <= 0; // MaxPrice = 0 means no upper limit
+            var unlimited = _cfg.MaxPrice <= 0;
             if (!long.TryParse(priceStr, NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var price)
                 || price < _cfg.MinPrice || (!unlimited && price > _cfg.MaxPrice))
                 return Result.Fail(unlimited
@@ -100,6 +112,9 @@ namespace RequestBoard
 
             lock (_lock)
             {
+                var notReady = NotReady();
+                if (notReady != null) return notReady;
+
                 if (_cfg.CooldownMinutes > 0)
                 {
                     var last = _requests.Where(r => r.RequesterId == playerId).Select(r => (DateTime?)r.CreatedUtc).Max();
@@ -124,18 +139,18 @@ namespace RequestBoard
 
                 var now = DateTime.UtcNow;
                 var deposit = Math.Ceiling(price * (double)_cfg.DepositPercent / 100.0);
-                var originName = _nexus != null && _nexus.Enabled ? _nexus.CurrentServerName : _cfg.ServerName;
+                var me = MyServerId;
                 var req = new Request
                 {
-                    Id = _nextId++,
+                    Id = NextLocalId(me),
                     RequesterId = playerId,
                     RequesterName = playerName,
                     Text = text,
                     Hours = hours,
                     Price = price,
                     Deposit = deposit >= long.MaxValue ? long.MaxValue : (long)deposit,
-                    OriginServerId = _nexus?.CurrentServerId ?? 0,
-                    OriginSectorName = originName,
+                    OriginServerId = me,
+                    OriginSectorName = _nexus.CurrentServerName,
                     Status = RequestStatus.Open,
                     HasLocation = position != null && _cfg.IncludeGps,
                     X = position != null ? position[0] : 0,
@@ -145,112 +160,135 @@ namespace RequestBoard
                     OpenExpiresUtc = now.AddHours(_cfg.OpenExpiryHours)
                 };
                 _requests.Add(req);
-                Save();
-                Announce(req, $"📦 New request #{req.Id}", Blue, null, true);
-                return Result.Success($"Request #{req.Id} posted. {price:N0} {_cfg.Currency} is held in escrow until it is delivered, failed or cancelled.");
+                Commit(req);
+                Announce(req, $"📦 New request #{req.Label}", Blue, null, true);
+                return Result.Success($"Request #{req.Label} posted. {price:N0} {_cfg.Currency} is held in escrow until it is delivered, failed or cancelled.");
             }
         }
 
-        public Result Accept(long playerId, string playerName, int id, string accepterSectorName = null)
+        public Result Accept(long playerId, string playerName, RequestKey key)
         {
-            if (!_cfg.Enabled) return Result.Fail("Request Board is currently disabled.");
             lock (_lock)
             {
-                var r = Find(id);
-                if (r == null) return Result.Fail($"No request #{id}.");
-                if (r.Status != RequestStatus.Open) return Result.Fail($"Request #{id} is no longer open.");
+                var notReady = NotReady();
+                if (notReady != null) return notReady;
+                var r = Find(key);
+                if (r == null) return Result.Fail($"No request #{key}.");
+                if (r.Status != RequestStatus.Open) return Result.Fail($"Request #{key} is no longer open.");
+                if (DateTime.UtcNow >= r.OpenExpiresUtc) return Result.Fail($"Request #{key} has expired.");
                 if (r.RequesterId == playerId) return Result.Fail("You can't accept your own request.");
                 if (Bank.Balance(playerId) < r.Deposit)
                     return Result.Fail($"You need a deposit of {r.Deposit:N0} {_cfg.Currency} to accept this.");
                 if (!Bank.Add(playerId, -r.Deposit))
                     return Result.Fail("Could not withdraw the deposit.");
 
+                var now = DateTime.UtcNow;
                 r.AccepterId = playerId;
                 r.AccepterName = playerName;
-                r.AccepterSectorName = accepterSectorName ?? (_nexus != null && _nexus.Enabled ? _nexus.CurrentServerName : _cfg.ServerName);
+                r.AccepterSectorName = _nexus.CurrentServerName;
+                r.AcceptedOnServerId = MyServerId;
                 r.Status = RequestStatus.Accepted;
-                r.AcceptedUtc = DateTime.UtcNow;
-                r.DeadlineUtc = r.AcceptedUtc.Value.AddHours(r.Hours);
-                Save();
-                Announce(r, $"🤝 Request #{r.Id} accepted", Yellow, null, true);
-                return Result.Success($"You accepted request #{id}. Deposit of {r.Deposit:N0} {_cfg.Currency} is held. Deadline: {r.Hours} h.");
+                r.AcceptedUtc = now;
+                r.DeadlineUtc = now.AddHours(r.Hours);
+                Commit(r);
+                Announce(r, $"🤝 Request #{r.Label} accepted", Yellow, null, true);
+                return Result.Success($"You accepted request #{r.Label}. Deposit of {r.Deposit:N0} {_cfg.Currency} is held. Deadline: {r.Hours} h.");
             }
         }
 
-        public Result Deliver(long playerId, int id)
+        public Result Deliver(long playerId, RequestKey key)
         {
             lock (_lock)
             {
-                var r = Find(id);
-                if (r == null) return Result.Fail($"No request #{id}.");
+                var notReady = NotReady();
+                if (notReady != null) return notReady;
+                var r = Find(key);
+                if (r == null) return Result.Fail($"No request #{key}.");
                 if (r.RequesterId != playerId) return Result.Fail("Only the player who posted the request can confirm delivery.");
-                if (r.Status != RequestStatus.Accepted) return Result.Fail($"Request #{id} isn't in progress.");
+                if (r.Status != RequestStatus.Accepted) return Result.Fail($"Request #{key} isn't in progress.");
+                if (r.DeadlineUtc.HasValue && DateTime.UtcNow >= r.DeadlineUtc.Value) return Result.Fail($"The deadline for request #{key} has passed.");
 
                 Bank.Add(r.AccepterId, r.Price + r.Deposit);
                 r.Status = RequestStatus.Delivered;
-                Save();
-                Announce(r, $"✅ Request #{r.Id} delivered", Green, $"{r.AccepterName} was paid {r.Price:N0} {_cfg.Currency}.");
+                Commit(r);
+                Announce(r, $"✅ Request #{r.Label} delivered", Green, $"{r.AccepterName} was paid {r.Price:N0} {_cfg.Currency}.");
                 return Result.Success($"Delivery confirmed. {r.AccepterName} was paid {r.Price:N0} {_cfg.Currency}.");
             }
         }
 
-        public Result Fail(long playerId, int id)
+        public Result Fail(long playerId, RequestKey key)
         {
             lock (_lock)
             {
-                var r = Find(id);
-                if (r == null) return Result.Fail($"No request #{id}.");
+                var notReady = NotReady();
+                if (notReady != null) return notReady;
+                var r = Find(key);
+                if (r == null) return Result.Fail($"No request #{key}.");
                 if (r.RequesterId != playerId) return Result.Fail("Only the player who posted the request can mark it as failed.");
-                if (r.Status != RequestStatus.Accepted) return Result.Fail($"Request #{id} isn't in progress.");
+                if (r.Status != RequestStatus.Accepted) return Result.Fail($"Request #{key} isn't in progress.");
+                if (r.DeadlineUtc.HasValue && DateTime.UtcNow >= r.DeadlineUtc.Value) return Result.Fail($"The deadline for request #{key} has passed, it will be failed automatically.");
                 FailInternal(r, "Marked as failed by the requester.");
-                return Result.Success($"Request #{id} marked as failed. Your {r.Price:N0} {_cfg.Currency} was returned.");
+                return Result.Success($"Request #{r.Label} marked as failed. Your {r.Price:N0} {_cfg.Currency} was returned.");
             }
         }
 
-        public Result Cancel(long playerId, int id)
+        public Result Cancel(long playerId, RequestKey key)
         {
             lock (_lock)
             {
-                var r = Find(id);
-                if (r == null) return Result.Fail($"No request #{id}.");
+                var notReady = NotReady();
+                if (notReady != null) return notReady;
+                var r = Find(key);
+                if (r == null) return Result.Fail($"No request #{key}.");
                 if (r.RequesterId != playerId) return Result.Fail("That isn't your request.");
                 if (r.Status != RequestStatus.Open) return Result.Fail("Only requests nobody has accepted yet can be cancelled.");
+                if (DateTime.UtcNow >= r.OpenExpiresUtc) return Result.Fail($"Request #{key} has expired, it will be refunded automatically.");
                 Bank.Add(r.RequesterId, r.Price);
                 r.Status = RequestStatus.Cancelled;
-                Save();
-                Announce(r, $"🚫 Request #{r.Id} cancelled", Grey);
-                return Result.Success($"Request #{id} cancelled and {r.Price:N0} {_cfg.Currency} refunded.");
+                Commit(r);
+                Announce(r, $"🚫 Request #{r.Label} cancelled", Grey);
+                return Result.Success($"Request #{r.Label} cancelled and {r.Price:N0} {_cfg.Currency} refunded.");
             }
         }
 
-        /// <summary>Admin override: refunds everyone involved and closes the request.</summary>
-        public Result AdminCancel(int id)
+        public Result AdminCancel(RequestKey key)
         {
             lock (_lock)
             {
-                var r = Find(id);
-                if (r == null) return Result.Fail($"No request #{id}.");
-                if (!r.IsActive) return Result.Fail($"Request #{id} is already closed.");
+                var notReady = NotReady();
+                if (notReady != null) return notReady;
+                var r = Find(key);
+                if (r == null) return Result.Fail($"No request #{key}.");
+                if (!r.IsActive) return Result.Fail($"Request #{key} is already closed.");
                 Bank.Add(r.RequesterId, r.Price);
                 if (r.Status == RequestStatus.Accepted) Bank.Add(r.AccepterId, r.Deposit);
                 r.Status = RequestStatus.Cancelled;
-                Save();
-                Announce(r, $"🚫 Request #{r.Id} cancelled by admin", Grey, "All parties were refunded.");
-                return Result.Success($"Request #{id} cancelled, everyone refunded.");
+                Commit(r);
+                Announce(r, $"🚫 Request #{r.Label} cancelled by admin", Grey, "All parties were refunded.");
+                return Result.Success($"Request #{r.Label} cancelled, everyone refunded.");
             }
         }
 
         public List<Request> GetOpen()
         {
-            lock (_lock) return _requests.Where(r => r.Status == RequestStatus.Open).OrderBy(r => r.Id).ToList();
+            var now = DateTime.UtcNow;
+            lock (_lock) return _requests.Where(r => r.Status == RequestStatus.Open && now < r.OpenExpiresUtc)
+                .OrderBy(r => r.OriginServerId).ThenBy(r => r.Id).ToList();
         }
 
         public List<Request> GetActive()
         {
-            lock (_lock) return _requests.Where(r => r.IsActive).OrderBy(r => r.Id).ToList();
+            lock (_lock) return _requests.Where(r => r.IsActive).OrderBy(r => r.OriginServerId).ThenBy(r => r.Id).ToList();
         }
 
-        // ---------------------------------------------------------------- internals
+        public static string TimeLeft(DateTime untilUtc)
+        {
+            var left = untilUtc - DateTime.UtcNow;
+            if (left <= TimeSpan.Zero) return "0m";
+            if (left.TotalDays >= 1) return $"{(int)left.TotalDays}d {left.Hours}h";
+            if (left.TotalHours >= 1) return $"{(int)left.TotalHours}h {left.Minutes}m";
+            return $"{Math.Max(1, (int)Math.Ceiling(left.TotalMinutes))}m";
+        }
 
         private void Tick()
         {
@@ -258,47 +296,66 @@ namespace RequestBoard
             {
                 lock (_lock)
                 {
+                    if (!_started || NotReady() != null) return;
+                    var me = MyServerId;
                     var now = DateTime.UtcNow;
-                    foreach (var r in _requests.Where(x => x.IsActive).ToList())
+                    foreach (var r in _requests.Where(x => x.IsActive && x.OriginServerId == me).ToList())
                     {
-                        if (r.Status == RequestStatus.Open && now >= r.OpenExpiresUtc)
+                        if (r.Status == RequestStatus.Open && now >= r.OpenExpiresUtc + TimerGrace)
                         {
                             Bank.Add(r.RequesterId, r.Price);
                             r.Status = RequestStatus.Expired;
-                            Save();
-                            Announce(r, $"⌛ Request #{r.Id} expired", Grey, "Nobody accepted in time. The requester was refunded.");
+                            Commit(r);
+                            Announce(r, $"⌛ Request #{r.Label} expired", Grey, "Nobody accepted in time. The requester was refunded.");
                         }
-                        else if (r.Status == RequestStatus.Accepted && r.DeadlineUtc.HasValue && now >= r.DeadlineUtc.Value)
+                        else if (r.Status == RequestStatus.Accepted && r.DeadlineUtc.HasValue && now >= r.DeadlineUtc.Value + TimerGrace)
                         {
                             FailInternal(r, "Deadline passed without delivery.");
                         }
                     }
+
+                    if (_nexus.Enabled && ++_tickCount % ResyncEveryTicks == 0)
+                        _nexus.BroadcastState(_requests.Where(r => r.IsActive).Select(NexusRequestDto.From).ToList());
                 }
             }
             catch (Exception e) { Log.Error(e, "RequestBoard tick failed"); }
         }
 
-        // Caller must hold _lock.
         private void FailInternal(Request r, string reason)
         {
             Bank.Add(r.RequesterId, r.Price);
             if (!_cfg.BurnDepositOnFail) Bank.Add(r.RequesterId, r.Deposit);
             r.Status = RequestStatus.Failed;
-            Save();
+            Commit(r);
             var lost = _cfg.BurnDepositOnFail ? "deposit was burned" : "deposit went to the requester";
-            Announce(r, $"❌ Request #{r.Id} failed", Red, $"{reason} {r.AccepterName} lost {r.Deposit:N0} {_cfg.Currency} ({lost}).");
+            Announce(r, $"❌ Request #{r.Label} failed", Red, $"{reason} {r.AccepterName} lost {r.Deposit:N0} {_cfg.Currency} ({lost}).");
         }
 
-        private Request Find(int id) => _requests.FirstOrDefault(r => r.Id == id);
+        private Request Find(RequestKey key) => _requests.FirstOrDefault(r => r.Key == key);
 
-        /// <summary>GPS string players can paste into the in-game GPS menu (also clickable in chat).</summary>
+        private int NextLocalId(byte origin)
+        {
+            var used = _requests.Where(r => r.OriginServerId == origin).Select(r => r.Id).DefaultIfEmpty(0).Max();
+            _nextId = Math.Max(_nextId, used + 1);
+            return _nextId++;
+        }
+
+        private void Commit(Request r)
+        {
+            r.Version++;
+            r.ChangedUtc = DateTime.UtcNow;
+            r.ChangedByServerId = MyServerId;
+            Save();
+            if (_nexus.Enabled) _nexus.BroadcastState(new[] { NexusRequestDto.From(r) });
+        }
+
         public static string Gps(Request r) => string.Format(CultureInfo.InvariantCulture,
-            "GPS:Request {0}:{1:F2}:{2:F2}:{3:F2}:#FF75C9F1:", r.Id, r.X, r.Y, r.Z);
+            "GPS:Request {0}:{1:F2}:{2:F2}:{3:F2}:#FF75C9F1:", r.Label, r.X, r.Y, r.Z);
 
         private void Announce(Request r, string title, int color, string extra = null, bool showLocation = false)
         {
             var desc = r.Text + (string.IsNullOrEmpty(extra) ? "" : "\n\n" + extra);
-            var nexusOn = _nexus != null && _nexus.Enabled;
+            var nexusOn = _nexus.Enabled;
             var fields = new List<EmbedField>
             {
                 new EmbedField("Requester", r.RequesterName),
@@ -316,87 +373,165 @@ namespace RequestBoard
             if (showLocation && r.HasLocation)
                 fields.Add(new EmbedField("Location", "`" + Gps(r) + "`", false));
             _hook.Send(title, desc, color, fields.ToArray());
-
-            if (nexusOn)
-                _nexus.BroadcastRequest(ToDto(r));
         }
 
-        private static NexusRequestDto ToDto(Request r) => new NexusRequestDto
-        {
-            OriginServerId = r.OriginServerId,
-            OriginLocalId = r.Id,
-            OriginSectorName = r.OriginSectorName,
-            RequesterName = r.RequesterName,
-            AccepterName = r.AccepterName,
-            AccepterSectorName = r.AccepterSectorName,
-            Text = r.Text,
-            Hours = r.Hours,
-            Price = r.Price,
-            Deposit = r.Deposit,
-            Status = r.Status.ToString(),
-            HasLocation = r.HasLocation,
-            X = r.X,
-            Y = r.Y,
-            Z = r.Z
-        };
-
-        // ---------------------------------------------------------------- Nexus cross-server
-
-        /// <summary>A request on another server changed state - update our read-only mirror of it.</summary>
-        private void OnRemoteRequestEvent(NexusRequestDto dto)
+        private void OnNexusConnected()
         {
             lock (_lock)
             {
-                var key = (dto.OriginServerId, dto.OriginLocalId);
-                if (dto.Status == RequestStatus.Open.ToString() || dto.Status == RequestStatus.Accepted.ToString())
-                    _remote[key] = dto;
-                else
-                    _remote.Remove(key); // delivered/failed/expired/cancelled - no longer actionable
-            }
-        }
+                if (!_started || _connected || !_nexus.Enabled) return;
+                _connected = true;
+                var me = MyServerId;
 
-        /// <summary>
-        /// A player on another server ran an action against a request that we are the home server for.
-        /// Executes the same logic as the local command and lets Announce() report/broadcast the result.
-        /// </summary>
-        private void OnRelayAction(NexusRelayActionDto action)
-        {
-            try
-            {
-                switch (action.ActionName)
+                var legacy = _requests.Where(r => r.OriginServerId == 0).ToList();
+                if (legacy.Count > 0)
                 {
-                    case "accept": Accept(action.PlayerId, action.PlayerName, action.RequestLocalId, action.PlayerSectorName); break;
-                    case "deliver": Deliver(action.PlayerId, action.RequestLocalId); break;
-                    case "fail": Fail(action.PlayerId, action.RequestLocalId); break;
-                    case "cancel": Cancel(action.PlayerId, action.RequestLocalId); break;
+                    foreach (var r in legacy)
+                    {
+                        if (Find(new RequestKey(me, r.Id)) != null) r.Id = NextLocalId(me);
+                        r.OriginServerId = me;
+                        if (r.ChangedByServerId == 0) r.ChangedByServerId = me;
+                        if (r.AccepterId != 0 && r.AcceptedOnServerId == 0) r.AcceptedOnServerId = me;
+                    }
+                    Log.Info($"RequestBoard: assigned {legacy.Count} request(s) created without Nexus to server {me}.");
+                    Save();
                 }
+
+                var peers = _nexus.OnlinePeers();
+                if (peers.Count == 0)
+                {
+                    FinishSync("no other servers online");
+                    return;
+                }
+                _syncPending.Clear();
+                foreach (var p in peers) _syncPending.Add(p);
+                Log.Info($"RequestBoard: requesting the request board from server(s) {string.Join(", ", peers)}.");
+                _nexus.SendSyncRequest();
+                _syncTimer?.Dispose();
+                _syncTimer = new Timer(_ => OnGameThread(() =>
+                {
+                    lock (_lock) if (_connected && !_synced) FinishSync($"timed out waiting for server(s) {string.Join(", ", _syncPending)}");
+                }), null, SyncTimeout, Timeout.InfiniteTimeSpan);
             }
-            catch (Exception e) { Log.Error(e, "RequestBoard: failed to process relayed Nexus action"); }
         }
 
-        /// <summary>Open requests mirrored from other Nexus servers, for display in "!requests".</summary>
-        public List<NexusRequestDto> GetRemoteOpen()
+        private void FinishSync(string reason)
         {
-            lock (_lock) return _remote.Values.Where(d => d.Status == RequestStatus.Open.ToString()).ToList();
+            _synced = true;
+            _syncPending.Clear();
+            _syncTimer?.Dispose();
+            _syncTimer = null;
+            Log.Info($"RequestBoard: sync complete ({reason}), {_requests.Count(r => r.IsActive)} active request(s).");
+            _nexus.BroadcastState(_requests.Where(r => r.IsActive).Select(NexusRequestDto.From).ToList());
         }
 
-        /// <summary>Finds which remote server (if any) currently reports owning request number id. Null if none/ambiguous.</summary>
-        public byte? FindRemoteOwner(int id)
+        private void OnSyncRequested(byte from)
         {
             lock (_lock)
             {
-                var matches = _remote.Keys.Where(k => k.Item2 == id).Select(k => k.Item1).Distinct().ToList();
-                return matches.Count == 1 ? matches[0] : (byte?)null;
+                if (!_started) return;
+                _nexus.SendSyncResponse(from, _requests.Select(NexusRequestDto.From).ToList());
             }
         }
 
-        // Caller must hold _lock.
+        private void OnSyncResponse(byte from, List<NexusRequestDto> list, bool last)
+        {
+            lock (_lock)
+            {
+                if (!_started) return;
+                MergeAll(list);
+                if (!last || _synced) return;
+                _syncPending.Remove(from);
+                if (_syncPending.Count == 0) FinishSync("all servers answered");
+            }
+        }
+
+        private void OnState(List<NexusRequestDto> list)
+        {
+            lock (_lock)
+            {
+                if (!_started) return;
+                MergeAll(list);
+            }
+        }
+
+        private void MergeAll(List<NexusRequestDto> list)
+        {
+            var changed = false;
+            foreach (var dto in list)
+            {
+                try { changed |= Merge(dto.ToRequest()); }
+                catch (Exception e) { Log.Error(e, $"RequestBoard: failed to merge request {dto.OriginServerId}/{dto.LocalId}"); }
+            }
+            if (changed) Save();
+        }
+
+        private bool Merge(Request incoming)
+        {
+            if (incoming.OriginServerId == 0 || incoming.Id <= 0) return false;
+            var index = _requests.FindIndex(r => r.Key == incoming.Key);
+            if (index < 0)
+            {
+                _requests.Add(incoming);
+                return true;
+            }
+
+            var local = _requests[index];
+            if (incoming.Version < local.Version) return false;
+            if (incoming.Version == local.Version)
+            {
+                if (local.ChangedUtc == incoming.ChangedUtc && local.ChangedByServerId == incoming.ChangedByServerId) return false;
+                var incomingWins = Wins(incoming, local);
+                Log.Error($"RequestBoard: conflicting changes to request #{local.Label} at version {local.Version}: " +
+                          $"local {Describe(local)} vs incoming {Describe(incoming)}. Keeping the {(incomingWins ? "incoming" : "local")} one.");
+                if (!incomingWins) return false;
+            }
+
+            RefundIfOurAcceptLost(local, incoming);
+            _requests[index] = incoming;
+            return true;
+        }
+
+        private static bool Wins(Request a, Request b)
+        {
+            var aClosing = a.Status != RequestStatus.Accepted;
+            var bClosing = b.Status != RequestStatus.Accepted;
+            if (aClosing != bClosing) return aClosing;
+            if (a.ChangedUtc != b.ChangedUtc) return a.ChangedUtc < b.ChangedUtc;
+            return a.ChangedByServerId < b.ChangedByServerId;
+        }
+
+        private static string Describe(Request r) =>
+            $"[{r.Status} by server {r.ChangedByServerId} at {r.ChangedUtc:O}" + (r.AccepterId != 0 ? $", accepter {r.AccepterName}" : "") + "]";
+
+        private void RefundIfOurAcceptLost(Request local, Request incoming)
+        {
+            if (local.Status != RequestStatus.Accepted || local.AcceptedOnServerId != MyServerId) return;
+            if (incoming.AccepterId == local.AccepterId && incoming.AcceptedOnServerId == local.AcceptedOnServerId && incoming.AcceptedUtc == local.AcceptedUtc) return;
+
+            Bank.Add(local.AccepterId, local.Deposit);
+            Log.Error($"RequestBoard: {local.AccepterName}'s accept of request #{local.Label} was overridden by another sector, refunded deposit of {local.Deposit:N0}.");
+            Notify(local.AccepterId, $"Someone else took request #{local.Label} at the same moment on another sector. Your deposit of {local.Deposit:N0} {_cfg.Currency} was refunded.");
+            _hook.Send($"⚠️ Request #{local.Label} accept overridden", local.Text, Orange,
+                new EmbedField("Player", local.AccepterName),
+                new EmbedField("Refunded", $"{local.Deposit:N0} {_cfg.Currency}"));
+        }
+
+        private static void Notify(long identityId, string message)
+        {
+            try { MyVisualScriptLogicProvider.SendChatMessage(message, "Request Board", identityId); }
+            catch (Exception e) { Log.Warn(e, "RequestBoard: could not send chat message"); }
+        }
+
         private void Save()
         {
             try
             {
                 var json = JsonConvert.SerializeObject(new StoreFile { NextId = _nextId, Requests = _requests }, Formatting.Indented);
-                File.WriteAllText(_file, json);
+                var tmp = _file + ".tmp";
+                File.WriteAllText(tmp, json);
+                if (File.Exists(_file)) File.Replace(tmp, _file, null);
+                else File.Move(tmp, _file);
             }
             catch (Exception e) { Log.Error(e, "Failed to save requests"); }
         }
@@ -409,7 +544,14 @@ namespace RequestBoard
                 var data = JsonConvert.DeserializeObject<StoreFile>(File.ReadAllText(_file));
                 if (data == null) return;
                 _requests = data.Requests ?? new List<Request>();
-                _nextId = Math.Max(data.NextId, _requests.Any() ? _requests.Max(r => r.Id) + 1 : 1);
+                foreach (var r in _requests.Where(r => r.Version == 0))
+                {
+                    r.Version = 1;
+                    r.ChangedUtc = r.AcceptedUtc ?? r.CreatedUtc;
+                    r.ChangedByServerId = r.OriginServerId;
+                    if (r.AccepterId != 0 && r.AcceptedOnServerId == 0) r.AcceptedOnServerId = r.OriginServerId;
+                }
+                _nextId = Math.Max(1, data.NextId);
             }
             catch (Exception e) { Log.Error(e, "Failed to load requests"); }
         }
