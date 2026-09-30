@@ -15,7 +15,7 @@
     <Reference Include="Torch.API"><HintPath>$(TorchDir)\Torch.API.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="NLog"><HintPath>$(TorchDir)\NLog.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Newtonsoft.Json"><HintPath>$(TorchDir)\Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="protobuf-net" Condition="'$(ProtoNetPath)' != ''"><HintPath>$(ProtoNetPath)</HintPath><Private>false</Private></Reference>
+    <Reference Include="protobuf-net"><HintPath>$(TorchDir)\protobuf-net.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Sandbox.Game"><HintPath>$(GameBin)\Sandbox.Game.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Sandbox.Common"><HintPath>$(GameBin)\Sandbox.Common.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="VRage"><HintPath>$(GameBin)\VRage.dll</HintPath><Private>false</Private></Reference>
