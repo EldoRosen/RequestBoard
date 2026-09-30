@@ -2,33 +2,30 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Request Board is a Torch (Space Engineers dedicated server) plugin where players post paid requests with credits held in escrow, backed by a shared ASP.NET Core service that multiple Torch servers talk to. See README.md for player commands and deployment steps.
+Request Board is a Torch (Space Engineers dedicated server) plugin where players post paid requests with credits held in escrow. State lives in a SQLite file the plugin opens directly; several Torch servers on the same machine can share one board by pointing at the same file. See README.md for player commands and setup.
 
 ## Build
 
 There is no test project and no linter.
 
-- Plugin: `dotnet build RequestBoard.Plugin\RequestBoard.csproj -c Release`. Requires `Directory.Build.props` (copy from `Directory.Build.props.template`, git-ignored) with `TorchDir` pointing at a Torch install that has already downloaded the game (`DedicatedServer64`); the `CheckTorchDir` target fails the build otherwise. Can also pass `/p:TorchDir=...`. The build zips `RequestBoard.dll`, `RequestBoard.Contracts.dll` and `manifest.xml` into `RequestBoard.zip` and copies it to `<TorchDir>\Plugins`.
-- Service: `dotnet run --project RequestBoard.Service` for local dev, or `dotnet publish RequestBoard.Service\RequestBoard.Service.csproj -c Release -o publish\RequestBoard.Service` (publishing overwrites `appsettings.json`).
-- Contracts builds as a dependency of both.
+- `dotnet build RequestBoard.Plugin\RequestBoard.csproj -c Release`. Requires `Directory.Build.props` (copy from `Directory.Build.props.template`, git-ignored) with `TorchDir` pointing at a Torch install that has already downloaded the game (`DedicatedServer64`); the `CheckTorchDir` target fails the build otherwise. Can also pass `/p:TorchDir=...`. The build zips `RequestBoard.dll`, `System.Data.SQLite.dll` and `manifest.xml` into `RequestBoard.zip` and copies it to `<TorchDir>\Plugins`.
 
-## Projects
+## Layout
 
-- `RequestBoard.Contracts` (netstandard2.0): DTOs/commands shared by both sides. The plugin serializes them with Newtonsoft.Json, the service with System.Text.Json, so changes must round-trip under both.
-- `RequestBoard.Plugin` (net48, WPF): the Torch plugin. Assembly/root namespace is `RequestBoard`, not `RequestBoard.Plugin`.
-- `RequestBoard.Service` (net10.0, minimal API): the single source of truth. Endpoints are all in `Program.cs`; logic in `BoardService`; SQLite access in `Database`; shared rules and Discord webhook in `SettingsStore` (stored in the DB, seeded once from `appsettings.json`).
+- `RequestBoard.Plugin` (net48, WPF) is the only project. Assembly/root namespace is `RequestBoard`, not `RequestBoard.Plugin`.
+- `Board/`: `BoardService` holds all rules and state transitions, `Database` the SQLite access (schema, requests, the shared `settings` row), `DiscordNotifier` a background webhook queue, `NativeSqlite` the native library loader, `Models` the data types.
+- `RequestService` is the game-facing layer: parses commands, moves credits via `Bank`, calls `BoardService`, runs the sync timer.
 
-## Architecture: who owns what
+## Architecture
 
-The service owns all state and rules; the plugin only moves credits. Keep this split when adding features.
-
-- **Credits in (post/accept):** the plugin withdraws price/deposit first via `Bank`, then calls the service. On rejection or `BackendUnavailableException` it refunds locally (`RequestService.Create`/`Accept`).
-- **Credits out (deliver/fail/cancel/admin-cancel/expiry):** the service closes the request and returns `Payout`s; the plugin applies them with `Bank.Add`. Failed payouts/refunds are logged as errors for manual repair, never retried automatically.
-- **Idempotency:** every command carries a fresh `OperationId` (GUID). `BoardService.Run` stores the serialized response per operation ID inside the same transaction, and returns it verbatim on repeat, so the HTTP backend's single retry can't double-apply. Sync results are stored only when they contain payouts. Old operations are pruned periodically.
-- **Sync/expiry:** each server calls `/sync` every `SyncIntervalSeconds` (min 10s, timer re-armed after each sync completes). Sync closes expired/overdue requests and hands their payouts to whichever server syncs first — exactly one server pays.
-- **Service concurrency:** all mutations run under `lock (_db.Sync)` in one SQLite transaction. Discord events are queued in `_afterCommit` and flushed only after a successful commit.
-- **Plugin threading:** backend calls run on the thread pool via `RequestService.Call`, and results are marshalled back with `_torch.Invoke` because `Bank` (`MyBankingSystem`) and chat must run on the game thread. Any code touching game APIs must go through that path.
-- **Transport:** all plugin↔service traffic goes through `IRequestBoardBackend`; `HttpRequestBoardBackend` is the only implementation and must throw `BackendUnavailableException` for network-level failures. It's constructed in `RequestBoardPlugin.Init`.
+- **SQLite packaging:** Torch loads every `.dll` in a plugin zip with `Assembly.Load(bytes)`, so a native DLL can't ship in the zip. The x64 `SQLite.Interop.dll` from `Stub.System.Data.SQLite.Core.NetFramework` is embedded as a resource in `RequestBoard.dll`; `NativeSqlite.EnsureLoaded` extracts it to `<instance>\RequestBoard\native\<version>\` and `LoadLibrary`s it before System.Data.SQLite first P/Invokes.
+- **Database path:** `RequestBoardConfig.DatabasePath`, relative paths resolved against the Torch instance folder. `Database.EnsureOpen` reopens when the configured path changes. Schema and timestamps (ticks) are unchanged from the old standalone service, so its `requestboard.db` can be used directly.
+- **Credits in (post/accept):** `RequestService` withdraws price/deposit via `Bank` first, then calls `BoardService`. On rejection or any exception it refunds locally.
+- **Credits out (deliver/fail/cancel/admin-cancel/expiry):** `BoardService` closes the request and returns `Payout`s; `RequestService` applies them with `Bank.Add`. Failed payouts/refunds are logged as errors for manual repair, never retried automatically.
+- **Concurrency:** every mutation runs in one `BEGIN IMMEDIATE` transaction (`Database.BeginWrite`), which serializes writers across processes sharing the file; in-process access is also under `lock (_db.Sync)`. Settings are re-read inside each transaction so a rules change from another server applies immediately. Discord events and log lines are queued in `_afterCommit` and flushed only after commit.
+- **Sync/expiry:** each server calls `BoardService.Sync` every `SyncIntervalSeconds` (min 10s, timer re-armed after each sync completes). Sync closes expired/overdue requests and returns their payouts to whichever server's transaction gets there first, so exactly one server pays.
+- **Threading:** database calls run on the thread pool via `RequestService.Call` (a busy shared file must never block the game thread), and results are marshalled back with `_torch.Invoke` because `Bank` (`MyBankingSystem`) and chat must run on the game thread. Any code touching game APIs must go through that path.
+- **Serialization:** the settings row is JSON via Newtonsoft (Torch's copy, not shipped). Old service rows are camelCase from System.Text.Json; Newtonsoft reads them case-insensitively.
 
 ## Game API notes
 

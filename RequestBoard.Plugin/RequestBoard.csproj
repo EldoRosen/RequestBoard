@@ -7,6 +7,7 @@
     <RootNamespace>RequestBoard</RootNamespace>
     <AssemblyName>RequestBoard</AssemblyName>
     <GameBin>$(TorchDir)\DedicatedServer64</GameBin>
+    <CopySQLiteInteropFiles>false</CopySQLiteInteropFiles>
   </PropertyGroup>
   <Target Name="CheckTorchDir" BeforeTargets="ResolveAssemblyReferences">
     <Error Condition="'$(TorchDir)'==''" Text="TorchDir is not set. Copy Directory.Build.props.template to Directory.Build.props and point TorchDir at your Torch folder, or pass /p:TorchDir=..." />
@@ -17,7 +18,8 @@
     <None Include="manifest.xml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\RequestBoard.Contracts\RequestBoard.Contracts.csproj" />
+    <PackageReference Include="Stub.System.Data.SQLite.Core.NetFramework" Version="1.0.119" GeneratePathProperty="true" />
+    <EmbeddedResource Include="$(PkgStub_System_Data_SQLite_Core_NetFramework)\build\net46\x64\SQLite.Interop.dll" LogicalName="SQLite.Interop.dll" Visible="false" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Torch"><HintPath>$(TorchDir)\Torch.dll</HintPath><Private>false</Private></Reference>
@@ -38,7 +40,7 @@
       <PluginZip>$(TargetDir)RequestBoard.zip</PluginZip>
     </PropertyGroup>
     <ItemGroup>
-      <PluginFile Include="$(TargetDir)RequestBoard.dll;$(TargetDir)RequestBoard.Contracts.dll;$(TargetDir)manifest.xml" />
+      <PluginFile Include="$(TargetDir)RequestBoard.dll;$(TargetDir)System.Data.SQLite.dll;$(TargetDir)manifest.xml" />
     </ItemGroup>
     <RemoveDir Directories="$(PluginStageDir)" />
     <Copy SourceFiles="@(PluginFile)" DestinationFolder="$(PluginStageDir)" />

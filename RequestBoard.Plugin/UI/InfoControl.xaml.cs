@@ -1,7 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
-using RequestBoard.Contracts;
+using RequestBoard.Board;
 
 namespace RequestBoard.UI
 {
@@ -25,7 +25,7 @@ namespace RequestBoard.UI
 
         private void AdminCancel_Click(object sender, RoutedEventArgs e)
         {
-            if (!(RequestsGrid.SelectedItem is RequestDto selected)) return;
+            if (!(RequestsGrid.SelectedItem is BoardRequest selected)) return;
             if (!_plugin.Service.Running)
             {
                 RequestsStatus.Text = "Start the server first, refunds can only be paid while the game is running.";

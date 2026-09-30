@@ -1,5 +1,3 @@
 <Solution>
-  <Project Path="RequestBoard.Contracts/RequestBoard.Contracts.csproj" />
   <Project Path="RequestBoard.Plugin/RequestBoard.csproj" />
-  <Project Path="RequestBoard.Service/RequestBoard.Service.csproj" />
 </Solution>

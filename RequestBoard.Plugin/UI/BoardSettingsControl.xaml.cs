@@ -3,7 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using RequestBoard.Contracts;
+using RequestBoard.Board;
 
 namespace RequestBoard.UI
 {
@@ -25,12 +25,12 @@ namespace RequestBoard.UI
         {
             if (_rulesBusy) return;
             _rulesBusy = true;
-            RulesStatus.Text = "Loading rules from the service...";
+            RulesStatus.Text = "Loading rules from the database...";
             try
             {
-                var result = await Task.Run(() => _plugin.Backend.GetSettingsAsync());
-                ShowSettings(result.Settings);
-                RulesStatus.Text = $"Loaded from the service at {DateTime.Now:HH:mm:ss}.";
+                var settings = await Task.Run(() => _plugin.Board.GetSettings());
+                ShowSettings(settings);
+                RulesStatus.Text = $"Loaded from the database at {DateTime.Now:HH:mm:ss}.";
             }
             catch (Exception ex)
             {
@@ -51,11 +51,11 @@ namespace RequestBoard.UI
                 return;
             }
             _rulesBusy = true;
-            RulesStatus.Text = "Saving rules to the service...";
+            RulesStatus.Text = "Saving rules to the database...";
             try
             {
-                var command = new SaveSettingsCommand { ServerName = _plugin.ConfigData.ServerName, Settings = settings };
-                var result = await Task.Run(() => _plugin.Backend.SaveSettingsAsync(command));
+                var copy = settings.Clone();
+                var result = await Task.Run(() => _plugin.Board.SaveSettings(copy));
                 if (result.Ok)
                 {
                     ShowSettings(result.Settings);

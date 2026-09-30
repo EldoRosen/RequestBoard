@@ -1,25 +1,31 @@
+using System;
 using System.IO;
 using System.Windows.Controls;
+using NLog;
 using Torch;
 using Torch.API;
 using Torch.API.Plugins;
 using Torch.API.Session;
-using RequestBoard.Backend;
+using RequestBoard.Board;
 using RequestBoard.UI;
 
 namespace RequestBoard
 {
     public class RequestBoardPlugin : TorchPluginBase, IWpfPlugin
     {
+        private static readonly Logger Log = LogManager.GetCurrentClassLogger();
+
         public static RequestBoardPlugin Instance { get; private set; }
 
         private Persistent<RequestBoardConfig> _config;
         private RequestBoardControl _control;
         private ITorchSessionManager _sessions;
+        private Database _database;
+        private DiscordNotifier _discord;
 
         public RequestBoardConfig ConfigData => _config.Data;
         public Persistent<RequestBoardConfig> Config => _config;
-        public IRequestBoardBackend Backend { get; private set; }
+        public BoardService Board { get; private set; }
         public RequestService Service { get; private set; }
 
         public override void Init(ITorchBase torch)
@@ -28,8 +34,13 @@ namespace RequestBoard
             Instance = this;
 
             _config = Persistent<RequestBoardConfig>.Load(Path.Combine(StoragePath, "RequestBoard.cfg"));
-            Backend = new HttpRequestBoardBackend(() => _config.Data.ServiceUrl);
-            Service = new RequestService(torch, _config.Data, Backend);
+            _database = new Database(() => _config.Data.DatabasePath, StoragePath);
+            _discord = new DiscordNotifier();
+            Board = new BoardService(_database, _discord, _config.Data);
+            Service = new RequestService(torch, _config.Data, Board);
+
+            try { Board.Open(); }
+            catch (Exception e) { Log.Error(e, "RequestBoard: could not open the database, check the path in the Request Board tab"); }
 
             // Don't start timers until the game session exists.
             _sessions = torch.Managers.GetManager(typeof(ITorchSessionManager)) as ITorchSessionManager;
@@ -50,6 +61,8 @@ namespace RequestBoard
         {
             if (_sessions != null) _sessions.SessionStateChanged -= OnSessionStateChanged;
             Service?.Stop();
+            _discord?.Dispose();
+            _database?.Dispose();
             _config?.Save();
             base.Dispose();
         }

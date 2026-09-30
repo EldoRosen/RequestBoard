@@ -8,7 +8,7 @@
                    FontStyle="Italic" Opacity="0.7"/>
         <TabControl>
             <TabItem Header="Info" x:Name="InfoTab"/>
-            <TabItem Header="Service settings" x:Name="ServiceTab"/>
+            <TabItem Header="Settings" x:Name="GeneralTab"/>
             <TabItem Header="Request board settings" x:Name="BoardTab"/>
         </TabControl>
     </DockPanel>

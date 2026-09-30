@@ -18,9 +18,11 @@ Players post paid requests, other players accept them, credits are held in escro
 Requests expire automatically: an un-accepted request is refunded, a missed deadline counts as a fail.
 
 ### Setup
-1. Start the service before the Torch servers: edit `appsettings.json` next to `RequestBoard.Service.exe` if you need a different URL or database path, then run the exe.
-2. Start Torch, open the **Request Board** tab, set the service URL and sector name, press **Test connection**, then **Save settings**.
-3. Adjust the board rules and Discord webhook in the same tab and press **Push to service**. Rules are shared by every server connected to the service and apply to new requests only.
+1. Start Torch, open the **Request Board** tab and on **Settings** set the database file and sector name, then press **Save settings**. Relative paths are resolved inside the Torch instance folder; the default is `C:\RequestBoard\requestboard.db`.
+2. To share one board between several Torch servers, point them all at the same database file. SQLite doesn't work reliably over network shares, so those servers must run on the same machine.
+3. Adjust the board rules and Discord webhook on **Request board settings** and press **Save rules**. Rules are stored in the database, shared by every server using it, and apply to new requests only.
+
+To keep the data from the old standalone service, stop the service and point the plugin at its `requestboard.db`.
 
 ## Clone and build
 1. Install the .NET SDK and clone the repo:

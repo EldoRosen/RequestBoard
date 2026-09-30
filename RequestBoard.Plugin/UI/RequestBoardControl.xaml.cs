@@ -8,10 +8,10 @@ namespace RequestBoard.UI
         {
             InitializeComponent();
             var board = new BoardSettingsControl(plugin);
-            var service = new ServiceSettingsControl(plugin);
-            service.Connected += board.PullSettings;
+            var general = new GeneralSettingsControl(plugin);
+            general.Connected += board.PullSettings;
             InfoTab.Content = new InfoControl(plugin);
-            ServiceTab.Content = service;
+            GeneralTab.Content = general;
             BoardTab.Content = board;
         }
     }

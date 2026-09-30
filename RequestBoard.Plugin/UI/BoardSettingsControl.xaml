@@ -1,10 +1,10 @@
 <UserControl x:Class="RequestBoard.UI.BoardSettingsControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:c="clr-namespace:RequestBoard.Contracts;assembly=RequestBoard.Contracts">
+             xmlns:c="clr-namespace:RequestBoard.Board">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="8">
-            <GroupBox Header="Board rules (stored in the service, shared by all servers)" Padding="8">
+            <GroupBox Header="Board rules (stored in the database, shared by all servers using it)" Padding="8">
                 <StackPanel>
                     <Grid x:Name="RulesFields" IsEnabled="False">
                         <Grid.ColumnDefinitions>
@@ -52,8 +52,8 @@
                         <TextBox Grid.Row="11" Grid.Column="1" Text="{Binding DiscordWebhookUrl}" Width="Auto" HorizontalAlignment="Stretch"/>
                     </Grid>
                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                        <Button Content="Pull from service" Width="140" Click="Pull_Click"/>
-                        <Button x:Name="PushButton" Content="Push to service" Width="140" Margin="8,0,0,0" IsEnabled="False" Click="Push_Click"/>
+                        <Button Content="Reload" Width="140" Click="Pull_Click"/>
+                        <Button x:Name="PushButton" Content="Save rules" Width="140" Margin="8,0,0,0" IsEnabled="False" Click="Push_Click"/>
                     </StackPanel>
                     <TextBlock x:Name="RulesStatus" Margin="0,6,0,0" TextWrapping="Wrap"/>
                 </StackPanel>

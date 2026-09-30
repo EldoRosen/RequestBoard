@@ -15,11 +15,11 @@ namespace RequestBoard
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         }
 
-        private string _serviceUrl = "http://localhost:5080";
+        private string _databasePath = @"C:\RequestBoard\requestboard.db";
         private string _serverName = "My Server";
         private int _syncIntervalSeconds = 60;
 
-        public string ServiceUrl { get => _serviceUrl; set => SetValue(ref _serviceUrl, value); }
+        public string DatabasePath { get => _databasePath; set => SetValue(ref _databasePath, value); }
         public string ServerName { get => _serverName; set => SetValue(ref _serverName, value); }
         public int SyncIntervalSeconds { get => _syncIntervalSeconds; set => SetValue(ref _syncIntervalSeconds, value); }
     }

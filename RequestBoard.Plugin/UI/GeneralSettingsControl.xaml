@@ -1,0 +1,26 @@
+<UserControl x:Class="RequestBoard.UI.GeneralSettingsControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <GroupBox Header="Request board database" Padding="8" Margin="8">
+            <StackPanel>
+                <TextBlock Text="Database file (SQLite, relative paths are inside the Torch instance folder)"/>
+                <DockPanel Margin="0,2,0,6">
+                    <Button DockPanel.Dock="Right" Content="Browse..." Width="80" Margin="8,0,0,0" Click="Browse_Click"/>
+                    <TextBox Text="{Binding DatabasePath, UpdateSourceTrigger=PropertyChanged}"/>
+                </DockPanel>
+                <TextBlock Text="Sector name (shown in messages)"/>
+                <TextBox Text="{Binding ServerName, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,6"/>
+                <TextBlock Text="Sync interval (seconds, minimum 10)"/>
+                <TextBox Text="{Binding SyncIntervalSeconds}" Width="160" HorizontalAlignment="Left" Margin="0,2,0,6"/>
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                    <Button Content="Save settings" Width="140" Click="Save_Click"/>
+                    <Button Content="Open database" Width="140" Margin="8,0,0,0" Click="Open_Click"/>
+                    <TextBlock x:Name="Status" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                </StackPanel>
+                <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" Opacity="0.75" FontStyle="Italic"
+                           Text="Every server pointed at the same database file shares one board, one set of rules and one Discord webhook. Servers sharing a file must run on the same machine, SQLite doesn't work reliably over network shares."/>
+            </StackPanel>
+        </GroupBox>
+    </ScrollViewer>
+</UserControl>
