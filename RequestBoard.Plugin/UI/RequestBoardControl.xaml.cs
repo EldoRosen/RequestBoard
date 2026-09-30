@@ -1,139 +1,18 @@
-using System;
-using System.Linq;
-using System.Threading.Tasks;
-using System.Windows;
 using System.Windows.Controls;
-using RequestBoard.Contracts;
 
 namespace RequestBoard.UI
 {
     public partial class RequestBoardControl : UserControl
     {
-        private readonly RequestBoardPlugin _plugin;
-        private bool _rulesBusy;
-
         public RequestBoardControl(RequestBoardPlugin plugin)
         {
             InitializeComponent();
-            _plugin = plugin;
-            DataContext = plugin.ConfigData;
-            _plugin.Service.Synced += () => Dispatcher.BeginInvoke(new Action(RefreshGrid));
-            IsVisibleChanged += (s, e) => { if ((bool)e.NewValue) PullSettings(); };
-            RefreshGrid();
+            var board = new BoardSettingsControl(plugin);
+            var service = new ServiceSettingsControl(plugin);
+            service.Connected += board.PullSettings;
+            InfoTab.Content = new InfoControl(plugin);
+            ServiceTab.Content = service;
+            BoardTab.Content = board;
         }
-
-        private void Save_Click(object sender, RoutedEventArgs e)
-        {
-            _plugin.SaveConfig();
-            TestStatus.Text = "Saved.";
-        }
-
-        private async void Test_Click(object sender, RoutedEventArgs e)
-        {
-            _plugin.SaveConfig();
-            TestStatus.Text = "Connecting...";
-            try
-            {
-                await Task.Run(() => _plugin.Backend.CheckConnectionAsync());
-                TestStatus.Text = "Connected to the request board service.";
-                PullSettings();
-            }
-            catch (Exception ex)
-            {
-                TestStatus.Text = ex.Message;
-            }
-        }
-
-        private void Pull_Click(object sender, RoutedEventArgs e) => PullSettings();
-
-        private async void PullSettings()
-        {
-            if (_rulesBusy) return;
-            _rulesBusy = true;
-            RulesStatus.Text = "Loading rules from the service...";
-            try
-            {
-                var result = await Task.Run(() => _plugin.Backend.GetSettingsAsync());
-                ShowSettings(result.Settings);
-                RulesStatus.Text = $"Loaded from the service at {DateTime.Now:HH:mm:ss}.";
-            }
-            catch (Exception ex)
-            {
-                RulesStatus.Text = "Could not load the rules: " + ex.Message;
-            }
-            finally
-            {
-                _rulesBusy = false;
-            }
-        }
-
-        private async void Push_Click(object sender, RoutedEventArgs e)
-        {
-            if (_rulesBusy || !(RulesFields.DataContext is BoardSettings settings)) return;
-            if (HasErrors(RulesFields))
-            {
-                RulesStatus.Text = "Fix the fields marked in red first.";
-                return;
-            }
-            _rulesBusy = true;
-            RulesStatus.Text = "Saving rules to the service...";
-            try
-            {
-                var command = new SaveSettingsCommand { ServerName = _plugin.ConfigData.ServerName, Settings = settings };
-                var result = await Task.Run(() => _plugin.Backend.SaveSettingsAsync(command));
-                if (result.Ok)
-                {
-                    ShowSettings(result.Settings);
-                    RulesStatus.Text = result.Message;
-                }
-                else
-                {
-                    RulesStatus.Text = "Not saved: " + result.Message;
-                }
-            }
-            catch (Exception ex)
-            {
-                RulesStatus.Text = "Could not save the rules: " + ex.Message;
-            }
-            finally
-            {
-                _rulesBusy = false;
-            }
-        }
-
-        private void ShowSettings(BoardSettings settings)
-        {
-            if (settings == null) return;
-            RulesFields.DataContext = settings;
-            RulesFields.IsEnabled = true;
-            PushButton.IsEnabled = true;
-        }
-
-        private static bool HasErrors(DependencyObject root) =>
-            Validation.GetHasError(root) || LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>().Any(HasErrors);
-
-        private void Refresh_Click(object sender, RoutedEventArgs e)
-        {
-            _plugin.Service.SyncNow();
-            RefreshGrid();
-        }
-
-        private void AdminCancel_Click(object sender, RoutedEventArgs e)
-        {
-            if (!(RequestsGrid.SelectedItem is RequestDto selected)) return;
-            if (!_plugin.Service.Running)
-            {
-                TestStatus.Text = "Start the server first, refunds can only be paid while the game is running.";
-                return;
-            }
-            var id = selected.Id;
-            _plugin.Service.AdminCancel(id, message => Dispatcher.BeginInvoke(new Action(() =>
-            {
-                TestStatus.Text = message;
-                _plugin.Service.SyncNow();
-            })));
-        }
-
-        private void RefreshGrid() => RequestsGrid.ItemsSource = _plugin.Service.Active;
     }
 }

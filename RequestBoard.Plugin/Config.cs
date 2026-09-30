@@ -15,12 +15,10 @@ namespace RequestBoard
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         }
 
-        private bool _enabled = true;
         private string _serviceUrl = "http://localhost:5080";
         private string _serverName = "My Server";
         private int _syncIntervalSeconds = 60;
 
-        public bool Enabled { get => _enabled; set => SetValue(ref _enabled, value); }
         public string ServiceUrl { get => _serviceUrl; set => SetValue(ref _serviceUrl, value); }
         public string ServerName { get => _serverName; set => SetValue(ref _serverName, value); }
         public int SyncIntervalSeconds { get => _syncIntervalSeconds; set => SetValue(ref _syncIntervalSeconds, value); }

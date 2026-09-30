@@ -1,0 +1,68 @@
+<UserControl x:Class="RequestBoard.UI.InfoControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="8">
+            <GroupBox Header="Active requests" Padding="8" Margin="0,0,0,10">
+                <StackPanel>
+                    <DataGrid x:Name="RequestsGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                              Height="200" SelectionMode="Single" CanUserAddRows="False">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="#" Binding="{Binding Id}" Width="60"/>
+                            <DataGridTextColumn Header="Requester" Binding="{Binding RequesterName}"/>
+                            <DataGridTextColumn Header="Accepted by" Binding="{Binding AccepterName}"/>
+                            <DataGridTextColumn Header="Price" Binding="{Binding Price}"/>
+                            <DataGridTextColumn Header="Status" Binding="{Binding Status}"/>
+                            <DataGridTextColumn Header="Text" Binding="{Binding Text}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <Button Content="Refresh" Width="90" Click="Refresh_Click"/>
+                        <Button Content="Cancel &amp; refund selected" Width="170" Margin="8,0,0,0" Click="AdminCancel_Click"/>
+                    </StackPanel>
+                    <TextBlock x:Name="RequestsStatus" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                </StackPanel>
+            </GroupBox>
+
+            <GroupBox Header="Commands" Padding="8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="260"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                        <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                    </Grid.RowDefinitions>
+                    <Grid.Resources>
+                        <Style TargetType="TextBlock"><Setter Property="Margin" Value="0,3"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
+                    </Grid.Resources>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!request &lt;price&gt; &lt;hours&gt; &lt;description&gt;"/>
+                    <TextBlock Grid.Row="0" Grid.Column="1" Text="Post a request. Price is taken and held until delivered, failed or cancelled. No quotes needed - everything after the hours is the description."/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!requests"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1" Text="List all open requests with their number, sector, price, time limit and deposit (from every server connected to the service)."/>
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!accept &lt;id&gt;"/>
+                    <TextBlock Grid.Row="2" Grid.Column="1" Text="Accept a request. A deposit is taken and held from the accepter. Cannot accept your own request."/>
+
+                    <TextBlock Grid.Row="3" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!deliver &lt;id&gt;"/>
+                    <TextBlock Grid.Row="3" Grid.Column="1" Text="Requester only. Confirms delivery - the accepter is paid the price and gets their deposit back."/>
+
+                    <TextBlock Grid.Row="4" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!fail &lt;id&gt;"/>
+                    <TextBlock Grid.Row="4" Grid.Column="1" Text="Requester only. Marks the job as failed - requester is refunded, accepter loses their deposit."/>
+
+                    <TextBlock Grid.Row="5" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!cancelrequest &lt;id&gt;"/>
+                    <TextBlock Grid.Row="5" Grid.Column="1" Text="Requester only. Cancels a request nobody has accepted yet, with a full refund."/>
+
+                    <TextBlock Grid.Row="6" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!admincancel &lt;id&gt;"/>
+                    <TextBlock Grid.Row="6" Grid.Column="1" Text="Admin only. Cancels any active request and refunds everyone involved. Same as the button above."/>
+
+                    <TextBlock Grid.Row="7" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="Example"/>
+                    <TextBlock Grid.Row="7" Grid.Column="1" FontFamily="Consolas" Text="!request 250000 6 500 iron ingots to Base Alpha"/>
+                </Grid>
+            </GroupBox>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

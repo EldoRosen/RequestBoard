@@ -61,7 +61,6 @@ namespace RequestBoard
 
         public void Create(long playerId, string playerName, string text, string hoursStr, string priceStr, double[] position, Action<string> reply)
         {
-            if (!_cfg.Enabled) { reply("Request Board is currently disabled."); return; }
             if (!double.TryParse(hoursStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var hours) || double.IsNaN(hours) || double.IsInfinity(hours) || hours <= 0)
             {
                 reply("Time must be a positive number of hours.");
@@ -105,7 +104,6 @@ namespace RequestBoard
 
         public void Accept(long playerId, string playerName, int id, Action<string> reply)
         {
-            if (!_cfg.Enabled) { reply("Request Board is currently disabled."); return; }
             Call(() => _backend.GetAsync(id),
                 lookup =>
                 {
@@ -152,7 +150,6 @@ namespace RequestBoard
 
         public void ListOpen(Action<OpenListResult> onResult, Action<string> reply)
         {
-            if (!_cfg.Enabled) { reply("Request Board is currently disabled."); return; }
             Call(() => _backend.ListOpenAsync(),
                 result =>
                 {
@@ -195,7 +192,6 @@ namespace RequestBoard
 
         private void Settle(Func<Task<ApiResult>> call, long callerId, string action, Action<string> reply)
         {
-            if (!_cfg.Enabled) { reply("Request Board is currently disabled."); return; }
             Call(call,
                 result =>
                 {
