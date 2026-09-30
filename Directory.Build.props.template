@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup>
+    <TorchDir Condition="'$(TorchDir)'==''">C:\path\to\torch-server</TorchDir>
+  </PropertyGroup>
+</Project>

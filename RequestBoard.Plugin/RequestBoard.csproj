@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <LangVersion>latest</LangVersion>
+    <Version>2.0.0</Version>
+    <RootNamespace>RequestBoard</RootNamespace>
+    <AssemblyName>RequestBoard</AssemblyName>
+    <GameBin>$(TorchDir)\DedicatedServer64</GameBin>
+  </PropertyGroup>
+  <Target Name="CheckTorchDir" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(TorchDir)'==''" Text="TorchDir is not set. Copy Directory.Build.props.template to Directory.Build.props and point TorchDir at your Torch folder, or pass /p:TorchDir=..." />
+    <Error Condition="!Exists('$(TorchDir)\Torch.dll')" Text="Torch.dll not found in '$(TorchDir)'. Check TorchDir in Directory.Build.props." />
+    <Error Condition="!Exists('$(GameBin)\Sandbox.Game.dll')" Text="Game files not found in '$(GameBin)'. Start Torch once so it downloads the game, then retry." />
+  </Target>
+  <ItemGroup>
+    <None Include="manifest.xml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\RequestBoard.Contracts\RequestBoard.Contracts.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Torch"><HintPath>$(TorchDir)\Torch.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Torch.API"><HintPath>$(TorchDir)\Torch.API.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="NLog"><HintPath>$(TorchDir)\NLog.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(TorchDir)\Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Sandbox.Game"><HintPath>$(GameBin)\Sandbox.Game.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Sandbox.Common"><HintPath>$(GameBin)\Sandbox.Common.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VRage"><HintPath>$(GameBin)\VRage.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VRage.Game"><HintPath>$(GameBin)\VRage.Game.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VRage.Math"><HintPath>$(GameBin)\VRage.Math.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VRage.Library"><HintPath>$(GameBin)\VRage.Library.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+  <Target Name="PackagePlugin" AfterTargets="Build">
+    <PropertyGroup>
+      <PluginStageDir>$(ProjectDir)$(IntermediateOutputPath)plugin\</PluginStageDir>
+      <PluginZip>$(TargetDir)RequestBoard.zip</PluginZip>
+    </PropertyGroup>
+    <ItemGroup>
+      <PluginFile Include="$(TargetDir)RequestBoard.dll;$(TargetDir)RequestBoard.Contracts.dll;$(TargetDir)manifest.xml" />
+    </ItemGroup>
+    <RemoveDir Directories="$(PluginStageDir)" />
+    <Copy SourceFiles="@(PluginFile)" DestinationFolder="$(PluginStageDir)" />
+    <ZipDirectory SourceDirectory="$(PluginStageDir)" DestinationFile="$(PluginZip)" Overwrite="true" />
+  </Target>
+  <Target Name="InstallPlugin" AfterTargets="PackagePlugin" Condition="Exists('$(TorchDir)\Torch.dll')">
+    <PropertyGroup>
+      <PluginInstallDir>$(TorchDir)\Plugins</PluginInstallDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(PluginInstallDir)" />
+    <Copy SourceFiles="$(PluginZip)" DestinationFolder="$(PluginInstallDir)" ContinueOnError="WarnAndContinue" />
+    <Message Importance="high" Text="RequestBoard -> $(PluginInstallDir)\RequestBoard.zip" />
+  </Target>
+</Project>

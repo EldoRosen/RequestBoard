@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Linq;
 using Torch.Commands;
 using Torch.Commands.Permissions;
@@ -21,80 +20,90 @@ namespace RequestBoard
                 return;
             }
             var p = Context.Player;
-            // Everything after price and hours is the description, so quotes are optional.
             var description = string.Join(" ", Context.Args.Skip(2));
             double[] pos = null;
-            if (p.Character != null)   // position of the player's character right now
+            if (p.Character != null)
             {
                 var v = p.GetPosition();
                 pos = new[] { v.X, v.Y, v.Z };
             }
-            Reply(Service.Create(p.IdentityId, p.DisplayName, description, Context.Args[1], Context.Args[0], pos));
+            Service.Create(p.IdentityId, p.DisplayName, description, Context.Args[1], Context.Args[0], pos, Reply);
         }
 
         [Command("requests", "List open requests.")]
         [Permission(MyPromoteLevel.None)]
         public void Requests()
         {
-            var cur = RequestBoardPlugin.Instance.Config.Data.Currency;
-            var lines = Service.GetOpen().Select(r =>
-                $"#{r.Label} [{r.OriginSectorName}] {r.RequesterName}: {r.Text} | {r.Price:N0} {cur} | {r.Hours} h | deposit {r.Deposit:N0} {cur} | expires in {RequestService.TimeLeft(r.OpenExpiresUtc)}"
-                + (r.HasLocation ? " | " + RequestService.Gps(r) : "")).ToList();
-            Context.Respond(lines.Count == 0 ? "There are no open requests." : string.Join("\n", lines));
+            var context = Context;
+            Service.ListOpen(result =>
+            {
+                var cur = result.Currency;
+                var lines = result.Requests.Select(r =>
+                    $"#{r.Id} [{r.RequesterServer}] {r.RequesterName}: {r.Text} | {r.Price:N0} {cur} | {r.Hours} h | deposit {r.Deposit:N0} {cur} | expires in {RequestService.TimeLeft(r.OpenExpiresUtc)}"
+                    + (r.HasLocation ? " | " + RequestService.Gps(r) : "")).ToList();
+                context.Respond(lines.Count == 0 ? "There are no open requests." : string.Join("\n", lines));
+            }, Reply);
         }
 
         [Command("accept", "Accept a request: !accept <id>")]
         [Permission(MyPromoteLevel.None)]
         public void Accept()
         {
-            if (!TryGetPlayerAndKey(out var key)) return;
-            Reply(Service.Accept(Context.Player.IdentityId, Context.Player.DisplayName, key));
+            if (!TryGetPlayerAndId(out var id)) return;
+            Service.Accept(Context.Player.IdentityId, Context.Player.DisplayName, id, Reply);
         }
 
         [Command("deliver", "Confirm delivery of your request: !deliver <id>")]
         [Permission(MyPromoteLevel.None)]
         public void Deliver()
         {
-            if (!TryGetPlayerAndKey(out var key)) return;
-            Reply(Service.Deliver(Context.Player.IdentityId, key));
+            if (!TryGetPlayerAndId(out var id)) return;
+            Service.Deliver(Context.Player.IdentityId, id, Reply);
         }
 
         [Command("fail", "Mark your request as failed: !fail <id>")]
         [Permission(MyPromoteLevel.None)]
         public void Fail()
         {
-            if (!TryGetPlayerAndKey(out var key)) return;
-            Reply(Service.Fail(Context.Player.IdentityId, key));
+            if (!TryGetPlayerAndId(out var id)) return;
+            Service.Fail(Context.Player.IdentityId, id, Reply);
         }
 
         [Command("cancelrequest", "Cancel your own un-accepted request: !cancelrequest <id>")]
         [Permission(MyPromoteLevel.None)]
         public void CancelRequest()
         {
-            if (!TryGetPlayerAndKey(out var key)) return;
-            Reply(Service.Cancel(Context.Player.IdentityId, key));
+            if (!TryGetPlayerAndId(out var id)) return;
+            Service.Cancel(Context.Player.IdentityId, id, Reply);
         }
 
         [Command("admincancel", "Admin: cancel any active request and refund everyone: !admincancel <id>")]
         [Permission(MyPromoteLevel.Admin)]
         public void AdminCancel()
         {
-            if (Context.Args.Count != 1 || !RequestKey.TryParse(Context.Args[0], Service.MyServerId, out var key)) { Context.Respond("Usage: !admincancel <id>"); return; }
-            Reply(Service.AdminCancel(key));
+            if (Context.Args.Count != 1 || !int.TryParse(Context.Args[0].TrimStart('#'), out var id)) { Context.Respond("Usage: !admincancel <id>"); return; }
+            Service.AdminCancel(id, Reply);
         }
 
-        private bool TryGetPlayerAndKey(out RequestKey key)
+        private System.Action<string> Reply
         {
-            key = default;
-            if (Context.Player == null) { Context.Respond("This command can only be used in-game."); return false; }
-            if (Context.Args.Count != 1 || !RequestKey.TryParse(Context.Args[0], Service.MyServerId, out key))
+            get
             {
-                Context.Respond("Please give a request number as shown in !requests, e.g. !accept 2/15");
+                var context = Context;
+                return message => context.Respond(message);
+            }
+        }
+
+        private bool TryGetPlayerAndId(out int id)
+        {
+            id = 0;
+            if (Context.Player == null) { Context.Respond("This command can only be used in-game."); return false; }
+            if (Context.Args.Count != 1 || !int.TryParse(Context.Args[0].TrimStart('#'), out id))
+            {
+                Context.Respond("Please give a request number, e.g. !accept 3");
                 return false;
             }
             return true;
         }
-
-        private void Reply(Result r) => Context.Respond(r.Message);
     }
 }

@@ -4,6 +4,7 @@ using Torch;
 using Torch.API;
 using Torch.API.Plugins;
 using Torch.API.Session;
+using RequestBoard.Backend;
 using RequestBoard.UI;
 
 namespace RequestBoard
@@ -18,8 +19,7 @@ namespace RequestBoard
 
         public RequestBoardConfig ConfigData => _config.Data;
         public Persistent<RequestBoardConfig> Config => _config;
-        public DiscordWebhook Webhook { get; private set; }
-        public NexusBridge Nexus { get; private set; }
+        public IRequestBoardBackend Backend { get; private set; }
         public RequestService Service { get; private set; }
 
         public override void Init(ITorchBase torch)
@@ -28,9 +28,8 @@ namespace RequestBoard
             Instance = this;
 
             _config = Persistent<RequestBoardConfig>.Load(Path.Combine(StoragePath, "RequestBoard.cfg"));
-            Webhook = new DiscordWebhook(() => _config.Data.WebhookUrl);
-            Nexus = new NexusBridge(_config.Data);
-            Service = new RequestService(torch, _config.Data, Webhook, Nexus, Path.Combine(StoragePath, "RequestBoard.requests.json"));
+            Backend = new HttpRequestBoardBackend(() => _config.Data.ServiceUrl);
+            Service = new RequestService(torch, _config.Data, Backend);
 
             // Don't start timers until the game session exists.
             _sessions = torch.Managers.GetManager(typeof(ITorchSessionManager)) as ITorchSessionManager;
@@ -39,8 +38,8 @@ namespace RequestBoard
 
         private void OnSessionStateChanged(ITorchSession session, TorchSessionState state)
         {
-            if (state == TorchSessionState.Loaded) { Service.Start(); Nexus.Start(); }
-            else if (state == TorchSessionState.Unloading) { Service.Stop(); Nexus.Stop(); }
+            if (state == TorchSessionState.Loaded) Service.Start();
+            else if (state == TorchSessionState.Unloading) Service.Stop();
         }
 
         public UserControl GetControl() => _control ?? (_control = new RequestBoardControl(this));
@@ -51,8 +50,6 @@ namespace RequestBoard
         {
             if (_sessions != null) _sessions.SessionStateChanged -= OnSessionStateChanged;
             Service?.Stop();
-            Nexus?.Dispose();
-            Webhook?.Dispose();
             _config?.Save();
             base.Dispose();
         }
