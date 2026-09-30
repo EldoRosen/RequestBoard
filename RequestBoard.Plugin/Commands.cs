@@ -39,7 +39,7 @@ namespace RequestBoard
             {
                 var cur = result.Currency;
                 var lines = result.Requests.Select(r =>
-                    $"#{r.Id} [{r.RequesterServer}] {r.RequesterName}: {r.Text} | {r.Price:N0} {cur} | {r.Hours} h | deposit {r.Deposit:N0} {cur} | expires in {RequestService.TimeLeft(r.OpenExpiresUtc)}"
+                    $"#{r.Id} [{r.RequesterServer}] {r.RequesterName}: {r.Text} | {r.Price:N0} {cur} | deposit {r.Deposit:N0} {cur} | expires in {RequestService.TimeLeft(r.ExpiresUtc)}"
                     + (r.HasLocation ? " | " + RequestService.Gps(r) : "")).ToList();
                 context.Respond(lines.Count == 0 ? "There are no open requests." : string.Join("\n", lines));
             }, Reply);

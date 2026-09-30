@@ -14,7 +14,7 @@
                         <Grid.RowDefinitions>
                             <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
                             <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
-                            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                            <RowDefinition/><RowDefinition/><RowDefinition/>
                         </Grid.RowDefinitions>
                         <Grid.Resources>
                             <Style TargetType="TextBlock"><Setter Property="Margin" Value="0,4"/><Setter Property="VerticalAlignment" Value="Center"/></Style>
@@ -42,14 +42,12 @@
                         <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding MaxHours}"/>
                         <TextBlock Grid.Row="6" Text="Active requests per player"/>
                         <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding MaxOpenPerPlayer}"/>
-                        <TextBlock Grid.Row="7" Text="Un-accepted requests expire after (hours)"/>
-                        <TextBox Grid.Row="7" Grid.Column="1" Text="{Binding OpenExpiryHours}"/>
-                        <TextBlock Grid.Row="8" Text="Cooldown between posts (minutes)"/>
-                        <TextBox Grid.Row="8" Grid.Column="1" Text="{Binding CooldownMinutes}"/>
-                        <CheckBox Grid.Row="9" Grid.ColumnSpan="2" Content="Burn the deposit on fail (otherwise it goes to the requester)" IsChecked="{Binding BurnDepositOnFail}"/>
-                        <CheckBox Grid.Row="10" Grid.ColumnSpan="2" Content="Include the requester's GPS location" IsChecked="{Binding IncludeGps}"/>
-                        <TextBlock Grid.Row="11" Text="Discord webhook URL (empty = off)"/>
-                        <TextBox Grid.Row="11" Grid.Column="1" Text="{Binding DiscordWebhookUrl}" Width="Auto" HorizontalAlignment="Stretch"/>
+                        <TextBlock Grid.Row="7" Text="Cooldown between posts (minutes)"/>
+                        <TextBox Grid.Row="7" Grid.Column="1" Text="{Binding CooldownMinutes}"/>
+                        <CheckBox Grid.Row="8" Grid.ColumnSpan="2" Content="Burn the deposit on fail (otherwise it goes to the requester)" IsChecked="{Binding BurnDepositOnFail}"/>
+                        <CheckBox Grid.Row="9" Grid.ColumnSpan="2" Content="Include the requester's GPS location" IsChecked="{Binding IncludeGps}"/>
+                        <TextBlock Grid.Row="10" Text="Discord webhook URL (empty = off)"/>
+                        <TextBox Grid.Row="10" Grid.Column="1" Text="{Binding DiscordWebhookUrl}" Width="Auto" HorizontalAlignment="Stretch"/>
                     </Grid>
                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                         <Button Content="Reload" Width="140" Click="Pull_Click"/>

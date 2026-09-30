@@ -11,7 +11,7 @@ namespace RequestBoard.Board
 {
     public sealed class Database : IDisposable
     {
-        private const string Columns = "id, requester_id, requester_name, requester_server, text, hours, price, deposit, accepter_id, accepter_name, accepter_server, status, has_location, x, y, z, created_utc, open_expires_utc, accepted_utc, deadline_utc, closed_utc";
+        private const string Columns = "id, requester_id, requester_name, requester_server, text, hours, price, deposit, accepter_id, accepter_name, accepter_server, status, has_location, x, y, z, created_utc, expires_utc, accepted_utc, closed_utc";
         private const string SettingsKey = "board";
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
@@ -68,9 +68,8 @@ namespace RequestBoard.Board
                         has_location INTEGER NOT NULL,
                         x REAL NOT NULL, y REAL NOT NULL, z REAL NOT NULL,
                         created_utc INTEGER NOT NULL,
-                        open_expires_utc INTEGER NOT NULL,
+                        expires_utc INTEGER NOT NULL,
                         accepted_utc INTEGER,
-                        deadline_utc INTEGER,
                         closed_utc INTEGER
                     );
                     CREATE INDEX IF NOT EXISTS ix_requests_status ON requests(status);
@@ -78,8 +77,7 @@ namespace RequestBoard.Board
                     CREATE TABLE IF NOT EXISTS settings (
                         key TEXT PRIMARY KEY,
                         value TEXT NOT NULL
-                    );
-                    DROP TABLE IF EXISTS operations;");
+                    );");
                 using (var seed = Command(conn, null, "INSERT OR IGNORE INTO settings (key, value) VALUES (@key, @value)",
                            ("@key", SettingsKey), ("@value", JsonConvert.SerializeObject(new BoardSettings()))))
                     seed.ExecuteNonQuery();
@@ -135,7 +133,7 @@ namespace RequestBoard.Board
         {
             using (var cmd = Command(tx, $@"
                 INSERT INTO requests ({Columns.Substring(4)})
-                VALUES (@requester_id, @requester_name, @requester_server, @text, @hours, @price, @deposit, @accepter_id, @accepter_name, @accepter_server, @status, @has_location, @x, @y, @z, @created_utc, @open_expires_utc, @accepted_utc, @deadline_utc, @closed_utc);
+                VALUES (@requester_id, @requester_name, @requester_server, @text, @hours, @price, @deposit, @accepter_id, @accepter_name, @accepter_server, @status, @has_location, @x, @y, @z, @created_utc, @expires_utc, @accepted_utc, @closed_utc);
                 SELECT last_insert_rowid();", Parameters(r)))
                 r.Id = Convert.ToInt32(cmd.ExecuteScalar());
         }
@@ -148,8 +146,7 @@ namespace RequestBoard.Board
                     text = @text, hours = @hours, price = @price, deposit = @deposit,
                     accepter_id = @accepter_id, accepter_name = @accepter_name, accepter_server = @accepter_server,
                     status = @status, has_location = @has_location, x = @x, y = @y, z = @z,
-                    created_utc = @created_utc, open_expires_utc = @open_expires_utc, accepted_utc = @accepted_utc,
-                    deadline_utc = @deadline_utc, closed_utc = @closed_utc
+                    created_utc = @created_utc, expires_utc = @expires_utc, accepted_utc = @accepted_utc, closed_utc = @closed_utc
                 WHERE id = @id", Parameters(r).Append(("@id", (object)r.Id)).ToArray()))
             {
                 if (cmd.ExecuteNonQuery() != 1) throw new InvalidOperationException($"Request {r.Id} was not updated.");
@@ -211,8 +208,8 @@ namespace RequestBoard.Board
             ("@text", r.Text), ("@hours", r.Hours), ("@price", r.Price), ("@deposit", r.Deposit),
             ("@accepter_id", r.AccepterId), ("@accepter_name", r.AccepterName), ("@accepter_server", r.AccepterServer),
             ("@status", (int)r.Status), ("@has_location", r.HasLocation ? 1 : 0), ("@x", r.X), ("@y", r.Y), ("@z", r.Z),
-            ("@created_utc", r.CreatedUtc.Ticks), ("@open_expires_utc", r.OpenExpiresUtc.Ticks),
-            ("@accepted_utc", r.AcceptedUtc?.Ticks), ("@deadline_utc", r.DeadlineUtc?.Ticks), ("@closed_utc", r.ClosedUtc?.Ticks)
+            ("@created_utc", r.CreatedUtc.Ticks), ("@expires_utc", r.ExpiresUtc.Ticks),
+            ("@accepted_utc", r.AcceptedUtc?.Ticks), ("@closed_utc", r.ClosedUtc?.Ticks)
         };
 
         private static BoardRequest Read(SQLiteDataReader rd) => new BoardRequest
@@ -234,10 +231,9 @@ namespace RequestBoard.Board
             Y = rd.GetDouble(14),
             Z = rd.GetDouble(15),
             CreatedUtc = Utc(rd.GetInt64(16)),
-            OpenExpiresUtc = Utc(rd.GetInt64(17)),
+            ExpiresUtc = Utc(rd.GetInt64(17)),
             AcceptedUtc = rd.IsDBNull(18) ? (DateTime?)null : Utc(rd.GetInt64(18)),
-            DeadlineUtc = rd.IsDBNull(19) ? (DateTime?)null : Utc(rd.GetInt64(19)),
-            ClosedUtc = rd.IsDBNull(20) ? (DateTime?)null : Utc(rd.GetInt64(20))
+            ClosedUtc = rd.IsDBNull(19) ? (DateTime?)null : Utc(rd.GetInt64(19))
         };
 
         private static DateTime Utc(long ticks) => new DateTime(ticks, DateTimeKind.Utc);

@@ -27,9 +27,8 @@ namespace RequestBoard.Board
         public double Y { get; set; }
         public double Z { get; set; }
         public DateTime CreatedUtc { get; set; }
-        public DateTime OpenExpiresUtc { get; set; }
+        public DateTime ExpiresUtc { get; set; }
         public DateTime? AcceptedUtc { get; set; }
-        public DateTime? DeadlineUtc { get; set; }
         public DateTime? ClosedUtc { get; set; }
     }
 
@@ -72,7 +71,6 @@ namespace RequestBoard.Board
         public long MaxPrice { get; set; } = 100000000;
         public double MaxHours { get; set; } = 72;
         public int MaxOpenPerPlayer { get; set; } = 3;
-        public double OpenExpiryHours { get; set; } = 24;
         public double CooldownMinutes { get; set; }
         public bool BurnDepositOnFail { get; set; }
         public bool IncludeGps { get; set; } = true;

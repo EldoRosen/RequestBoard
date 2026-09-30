@@ -63,7 +63,7 @@ namespace RequestBoard.Board
             {
                 using (var tx = _db.BeginRead())
                 {
-                    var list = _db.Query(tx, "WHERE status = @s AND open_expires_utc > @now ORDER BY id",
+                    var list = _db.Query(tx, "WHERE status = @s AND expires_utc > @now ORDER BY id",
                         ("@s", (int)RequestStatus.Open), ("@now", DateTime.UtcNow.Ticks));
                     return new OpenListResult { Requests = list, Currency = _db.LoadSettings(tx).Currency };
                 }
@@ -157,7 +157,7 @@ namespace RequestBoard.Board
                     Y = includeGps ? position[1] : 0,
                     Z = includeGps ? position[2] : 0,
                     CreatedUtc = now,
-                    OpenExpiresUtc = now.AddHours(rules.OpenExpiryHours)
+                    ExpiresUtc = now.AddHours(hours)
                 };
                 _db.Insert(tx, r);
                 Event(rules, r, $"📦 New request #{r.Id}", Blue, null, true,
@@ -172,7 +172,7 @@ namespace RequestBoard.Board
                 var r = _db.Get(tx, id);
                 if (r == null) return Fail($"No request #{id}.");
                 if (r.Status != RequestStatus.Open) return Fail($"Request #{id} is no longer open.");
-                if (DateTime.UtcNow >= r.OpenExpiresUtc) return Fail($"Request #{id} has expired.");
+                if (DateTime.UtcNow >= r.ExpiresUtc) return Fail($"Request #{id} has expired.");
                 if (r.RequesterId == playerId) return Fail("You can't accept your own request.");
                 if (r.Deposit != deposit) return Fail($"The deposit for request #{id} is {r.Deposit:N0} {rules.Currency}, please try again.");
 
@@ -182,11 +182,10 @@ namespace RequestBoard.Board
                 r.AccepterServer = Server;
                 r.Status = RequestStatus.Accepted;
                 r.AcceptedUtc = now;
-                r.DeadlineUtc = now.AddHours(r.Hours);
                 _db.Update(tx, r);
                 Event(rules, r, $"🤝 Request #{r.Id} accepted", Yellow, null, true,
-                    $"#{r.Id} accepted by {r.AccepterName} on {Server}, deposit {r.Deposit:N0} held, deadline {r.DeadlineUtc:u}");
-                return Ok($"You accepted request #{r.Id}. Deposit of {r.Deposit:N0} {rules.Currency} is held. Deadline: {r.Hours} h.", r);
+                    $"#{r.Id} accepted by {r.AccepterName} on {Server}, deposit {r.Deposit:N0} held, deadline {r.ExpiresUtc:u}");
+                return Ok($"You accepted request #{r.Id}. Deposit of {r.Deposit:N0} {rules.Currency} is held. Time left: {RequestService.TimeLeft(r.ExpiresUtc)}.", r);
             });
 
         public BoardResult Deliver(int id, long playerId) =>
@@ -196,7 +195,7 @@ namespace RequestBoard.Board
                 if (r == null) return Fail($"No request #{id}.");
                 if (r.RequesterId != playerId) return Fail("Only the player who posted the request can confirm delivery.");
                 if (r.Status != RequestStatus.Accepted) return Fail($"Request #{id} isn't in progress.");
-                if (DateTime.UtcNow >= r.DeadlineUtc) return Fail($"The deadline for request #{id} has passed.");
+                if (DateTime.UtcNow >= r.ExpiresUtc) return Fail($"The deadline for request #{id} has passed.");
 
                 Close(tx, r, RequestStatus.Delivered);
                 Event(rules, r, $"✅ Request #{r.Id} delivered", Green, $"{r.AccepterName} was paid {r.Price:N0} {rules.Currency}.", false,
@@ -212,7 +211,7 @@ namespace RequestBoard.Board
                 if (r == null) return Fail($"No request #{id}.");
                 if (r.RequesterId != playerId) return Fail("Only the player who posted the request can mark it as failed.");
                 if (r.Status != RequestStatus.Accepted) return Fail($"Request #{id} isn't in progress.");
-                if (DateTime.UtcNow >= r.DeadlineUtc) return Fail($"The deadline for request #{id} has passed, it will be failed automatically.");
+                if (DateTime.UtcNow >= r.ExpiresUtc) return Fail($"The deadline for request #{id} has passed, it will be failed automatically.");
 
                 var payout = FailCore(tx, rules, r, "Marked as failed by the requester.");
                 return Ok($"Request #{r.Id} marked as failed. Your {r.Price:N0} {rules.Currency} was returned.", r, payout);
@@ -225,7 +224,7 @@ namespace RequestBoard.Board
                 if (r == null) return Fail($"No request #{id}.");
                 if (r.RequesterId != playerId) return Fail("That isn't your request.");
                 if (r.Status != RequestStatus.Open) return Fail("Only requests nobody has accepted yet can be cancelled.");
-                if (DateTime.UtcNow >= r.OpenExpiresUtc) return Fail($"Request #{id} has expired, it will be refunded automatically.");
+                if (DateTime.UtcNow >= r.ExpiresUtc) return Fail($"Request #{id} has expired, it will be refunded automatically.");
 
                 Close(tx, r, RequestStatus.Cancelled);
                 Event(rules, r, $"🚫 Request #{r.Id} cancelled", Grey, null, false, $"#{r.Id} cancelled by {r.RequesterName} on {Server}: refunding {r.Price:N0}");
@@ -260,7 +259,7 @@ namespace RequestBoard.Board
                         var rules = _db.LoadSettings(tx);
                         var now = DateTime.UtcNow;
                         result = new SyncResult { Currency = rules.Currency };
-                        var due = _db.Query(tx, "WHERE (status = @o AND open_expires_utc <= @now) OR (status = @a AND deadline_utc <= @now) ORDER BY id",
+                        var due = _db.Query(tx, "WHERE status IN (@o, @a) AND expires_utc <= @now ORDER BY id",
                             ("@o", (int)RequestStatus.Open), ("@a", (int)RequestStatus.Accepted), ("@now", now.Ticks));
                         foreach (var r in due)
                         {
@@ -371,9 +370,9 @@ namespace RequestBoard.Board
             "GPS:Request {0}:{1:F2}:{2:F2}:{3:F2}:#FF75C9F1:", r.Id, r.X, r.Y, r.Z);
 
         public static string Describe(BoardSettings r) => string.Format(CultureInfo.InvariantCulture,
-            "price {0:N0}-{1} {2}, deposit {3}%, posting fee {10}, max {4} h, {5} active per player, open expiry {6} h, cooldown {7} min, burn deposit on fail: {8}, GPS: {9}",
+            "price {0:N0}-{1} {2}, deposit {3}%, posting fee {9}, max {4} h, {5} active per player, cooldown {6} min, burn deposit on fail: {7}, GPS: {8}",
             r.MinPrice, r.MaxPrice <= 0 ? "unlimited" : r.MaxPrice.ToString("N0"), r.Currency, r.DepositPercent, r.MaxHours,
-            r.MaxOpenPerPlayer, r.OpenExpiryHours, r.CooldownMinutes, r.BurnDepositOnFail, r.IncludeGps,
+            r.MaxOpenPerPlayer, r.CooldownMinutes, r.BurnDepositOnFail, r.IncludeGps,
             r.PostingFeeMode == PostingFeeMode.Percent ? $"{r.PostingFee}%" : $"{r.PostingFee:N0} {r.Currency}");
 
         private static string WebhookState(BoardSettings r) => string.IsNullOrWhiteSpace(r.DiscordWebhookUrl) ? "not configured" : "configured";
@@ -392,7 +391,6 @@ namespace RequestBoard.Board
             if (s.MaxPrice > 0 && s.MaxPrice < s.MinPrice) return "Maximum price must be 0 (unlimited) or at least the minimum price.";
             if (!(s.MaxHours > 0) || s.MaxHours > 8760) return "Max hours must be between 0 and 8760.";
             if (s.MaxOpenPerPlayer < 1) return "Active requests per player must be at least 1.";
-            if (!(s.OpenExpiryHours > 0) || s.OpenExpiryHours > 8760) return "Open expiry must be between 0 and 8760 hours.";
             if (!(s.CooldownMinutes >= 0) || s.CooldownMinutes > 525600) return "Cooldown must be between 0 and 525600 minutes.";
             if (s.DiscordWebhookUrl.Length > 0 &&
                 (!Uri.TryCreate(s.DiscordWebhookUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps))
