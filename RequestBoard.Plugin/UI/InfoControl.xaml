@@ -38,29 +38,29 @@
                         <Style TargetType="TextBlock"><Setter Property="Margin" Value="0,3"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
                     </Grid.Resources>
 
-                    <TextBlock Grid.Row="0" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!request &lt;price&gt; &lt;hours&gt; &lt;description&gt;"/>
+                    <TextBlock Grid.Row="0" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!request open &lt;price&gt; &lt;hours&gt; &lt;description&gt;"/>
                     <TextBlock Grid.Row="0" Grid.Column="1" Text="Post a request. Price is taken and held until delivered, failed or cancelled. A posting fee may also be charged, which is never refunded. No quotes needed - everything after the hours is the description."/>
 
-                    <TextBlock Grid.Row="1" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!requests"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!request list"/>
                     <TextBlock Grid.Row="1" Grid.Column="1" Text="List all open requests with their number, sector, price, time limit and deposit (from every server using the same database)."/>
 
-                    <TextBlock Grid.Row="2" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!accept &lt;id&gt;"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!request accept &lt;id&gt;"/>
                     <TextBlock Grid.Row="2" Grid.Column="1" Text="Accept a request. A deposit is taken and held from the accepter. Cannot accept your own request."/>
 
-                    <TextBlock Grid.Row="3" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!deliver &lt;id&gt;"/>
+                    <TextBlock Grid.Row="3" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!request confirm &lt;id&gt;"/>
                     <TextBlock Grid.Row="3" Grid.Column="1" Text="Requester only. Confirms delivery - the accepter is paid the price and gets their deposit back."/>
 
-                    <TextBlock Grid.Row="4" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!fail &lt;id&gt;"/>
+                    <TextBlock Grid.Row="4" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!request fail &lt;id&gt;"/>
                     <TextBlock Grid.Row="4" Grid.Column="1" Text="Requester only. Marks the job as failed - requester is refunded, accepter loses their deposit."/>
 
-                    <TextBlock Grid.Row="5" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!cancelrequest &lt;id&gt;"/>
+                    <TextBlock Grid.Row="5" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!request cancel &lt;id&gt;"/>
                     <TextBlock Grid.Row="5" Grid.Column="1" Text="Requester only. Cancels a request nobody has accepted yet, with a full refund."/>
 
-                    <TextBlock Grid.Row="6" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!admincancel &lt;id&gt;"/>
+                    <TextBlock Grid.Row="6" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="!request admincancel &lt;id&gt;"/>
                     <TextBlock Grid.Row="6" Grid.Column="1" Text="Admin only. Cancels any active request and refunds everyone involved. Same as the button above."/>
 
                     <TextBlock Grid.Row="7" Grid.Column="0" FontFamily="Consolas" FontWeight="Bold" Text="Example"/>
-                    <TextBlock Grid.Row="7" Grid.Column="1" FontFamily="Consolas" Text="!request 250000 6 500 iron ingots to Base Alpha"/>
+                    <TextBlock Grid.Row="7" Grid.Column="1" FontFamily="Consolas" Text="!request open 250000 6 500 iron ingots to Base Alpha"/>
                 </Grid>
             </GroupBox>
         </StackPanel>

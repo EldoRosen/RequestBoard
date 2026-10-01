@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using Torch.Commands;
 using Torch.Commands.Permissions;
@@ -9,30 +10,47 @@ namespace RequestBoard
     {
         private RequestService Service => RequestBoardPlugin.Instance.Service;
 
-        [Command("request", "Post a request: !request <price> <hours> <description>")]
+        private bool IsAdmin => Context.Player == null || Context.Player.PromoteLevel >= MyPromoteLevel.Admin;
+
+        [Command("request", "Request board commands, see !request help")]
         [Permission(MyPromoteLevel.None)]
         public void Request()
         {
-            if (Context.Player == null) { Context.Respond("This command can only be used in-game."); return; }
-            if (Context.Args.Count < 3)
+            var sub = Context.Args.Count > 0 ? Context.Args[0].ToLowerInvariant() : "help";
+            var args = Context.Args.Skip(1).ToList();
+            switch (sub)
             {
-                Context.Respond("Usage: !request <price> <hours> <description>  (example: !request 250000 6 500 iron ingots to Base Alpha)");
+                case "open": Open(args); break;
+                case "list": List(); break;
+                case "accept": Accept(args); break;
+                case "confirm": Confirm(args); break;
+                case "fail": Fail(args); break;
+                case "cancel": Cancel(args); break;
+                case "admincancel" when IsAdmin: AdminCancel(args); break;
+                default: Help(); break;
+            }
+        }
+
+        private void Open(List<string> args)
+        {
+            if (Context.Player == null) { Context.Respond("This command can only be used in-game."); return; }
+            if (args.Count < 3)
+            {
+                Context.Respond("Usage: !request open <price> <hours> <description>  (example: !request open 250000 6 500 iron ingots to Base Alpha)");
                 return;
             }
             var p = Context.Player;
-            var description = string.Join(" ", Context.Args.Skip(2));
+            var description = string.Join(" ", args.Skip(2));
             double[] pos = null;
             if (p.Character != null)
             {
                 var v = p.GetPosition();
                 pos = new[] { v.X, v.Y, v.Z };
             }
-            Service.Create(p.IdentityId, p.DisplayName, description, Context.Args[1], Context.Args[0], pos, Reply);
+            Service.Create(p.IdentityId, p.DisplayName, description, args[1], args[0], pos, Reply);
         }
 
-        [Command("requests", "List open requests.")]
-        [Permission(MyPromoteLevel.None)]
-        public void Requests()
+        private void List()
         {
             var context = Context;
             Service.ListOpen(result =>
@@ -45,44 +63,50 @@ namespace RequestBoard
             }, Reply);
         }
 
-        [Command("accept", "Accept a request: !accept <id>")]
-        [Permission(MyPromoteLevel.None)]
-        public void Accept()
+        private void Accept(List<string> args)
         {
-            if (!TryGetPlayerAndId(out var id)) return;
+            if (!TryGetPlayerAndId(args, out var id)) return;
             Service.Accept(Context.Player.IdentityId, Context.Player.DisplayName, id, Reply);
         }
 
-        [Command("deliver", "Confirm delivery of your request: !deliver <id>")]
-        [Permission(MyPromoteLevel.None)]
-        public void Deliver()
+        private void Confirm(List<string> args)
         {
-            if (!TryGetPlayerAndId(out var id)) return;
+            if (!TryGetPlayerAndId(args, out var id)) return;
             Service.Deliver(Context.Player.IdentityId, id, Reply);
         }
 
-        [Command("fail", "Mark your request as failed: !fail <id>")]
-        [Permission(MyPromoteLevel.None)]
-        public void Fail()
+        private void Fail(List<string> args)
         {
-            if (!TryGetPlayerAndId(out var id)) return;
+            if (!TryGetPlayerAndId(args, out var id)) return;
             Service.Fail(Context.Player.IdentityId, id, Reply);
         }
 
-        [Command("cancelrequest", "Cancel your own un-accepted request: !cancelrequest <id>")]
-        [Permission(MyPromoteLevel.None)]
-        public void CancelRequest()
+        private void Cancel(List<string> args)
         {
-            if (!TryGetPlayerAndId(out var id)) return;
+            if (!TryGetPlayerAndId(args, out var id)) return;
             Service.Cancel(Context.Player.IdentityId, id, Reply);
         }
 
-        [Command("admincancel", "Admin: cancel any active request and refund everyone: !admincancel <id>")]
-        [Permission(MyPromoteLevel.Admin)]
-        public void AdminCancel()
+        private void AdminCancel(List<string> args)
         {
-            if (Context.Args.Count != 1 || !int.TryParse(Context.Args[0].TrimStart('#'), out var id)) { Context.Respond("Usage: !admincancel <id>"); return; }
+            if (args.Count != 1 || !int.TryParse(args[0].TrimStart('#'), out var id)) { Context.Respond("Usage: !request admincancel <id>"); return; }
             Service.AdminCancel(id, Reply);
+        }
+
+        private void Help()
+        {
+            var lines = new List<string>
+            {
+                "!request open <price> <hours> <description> - post a request, price is held in escrow",
+                "!request list - list open requests",
+                "!request accept <id> - accept a request, a deposit is held",
+                "!request confirm <id> - requester: confirm delivery, accepter is paid",
+                "!request fail <id> - requester: mark as failed, accepter loses the deposit",
+                "!request cancel <id> - requester: cancel an un-accepted request",
+            };
+            if (IsAdmin)
+                lines.Add("!request admincancel <id> - admin: cancel any active request, refund everyone");
+            Context.Respond(string.Join("\n", lines));
         }
 
         private System.Action<string> Reply
@@ -94,13 +118,13 @@ namespace RequestBoard
             }
         }
 
-        private bool TryGetPlayerAndId(out int id)
+        private bool TryGetPlayerAndId(List<string> args, out int id)
         {
             id = 0;
             if (Context.Player == null) { Context.Respond("This command can only be used in-game."); return false; }
-            if (Context.Args.Count != 1 || !int.TryParse(Context.Args[0].TrimStart('#'), out id))
+            if (args.Count != 1 || !int.TryParse(args[0].TrimStart('#'), out id))
             {
-                Context.Respond("Please give a request number, e.g. !accept 3");
+                Context.Respond("Please give a request number, e.g. !request accept 3");
                 return false;
             }
             return true;
